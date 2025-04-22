@@ -7,7 +7,7 @@ Original file is located at
     https://colab.research.google.com/gist/kebjam/538245b6b5574070dce7d4eb2ac98151/untitled5.ipynb
 """
 
-!pip install transformers gradio streamlit langdetect rouge-score sacrebleu --quiet
+# Importation des bibliothèques nécessaires"
 
 import streamlit as st
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
