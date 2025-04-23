@@ -1,11 +1,10 @@
 import streamlit as st
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, CamembertTokenizer, CamembertModel
 from langdetect import detect
 import torch
 # import gradio as gr  # Commenté car non utilisé
 from transformers import pipeline
 from functools import lru_cache
-import nltk
 
 
 # Téléchargement silencieux si punkt n'est pas présent
@@ -78,61 +77,67 @@ def load_abstractive_model(lang):
         return model, tokenizer
 
 # Fonction pour le résumé extractif 
-nltk.download('punkt')
-nltk.download('stopwords')
-
 @lru_cache(maxsize=None)
-def load_nltk_resources():
-    """Charge les ressources linguistiques pour NLTK"""
-    return {
-        'fr': nltk.data.load('tokenizers/punkt/french.pickle'),
-        'en': nltk.data.load('tokenizers/punkt/english.pickle')
-    }
+def load_camembert_model():
+    """Charge le modèle CamemBERT pré-entraîné"""
+    tokenizer = CamembertTokenizer.from_pretrained("camembert-base")
+    model = CamembertModel.from_pretrained("camembert-base")
+    return tokenizer, model
 
-def extractive_summarize(text, ratio=0.3):
+def camembert_extractive_summarize(text, ratio=0.3):
     try:
-        # Détection de langue
-        lang = detect(text[:500])
-        if lang not in ['fr', 'en']:
-            return "Langue non supportée", ""
+        # Chargement du modèle
+        tokenizer, model = load_camembert_model()
         
-        # Tokenization des phrases
-        sentences = sent_tokenize(text, language='french' if lang == 'fr' else 'english')
+        # Tokenization et encodage
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        with torch.no_grad():
+            outputs = model(**inputs)
+        
+        # Récupération des embeddings
+        embeddings = outputs.last_hidden_state[0]
+        
+        # Découpage en phrases (version française)
+        sentences = []
+        current = ""
+        for char in text:
+            current += char
+            if char in ['.', '!', '?', '…', '\n']:
+                if len(current.strip()) > 3:
+                    sentences.append(current.strip())
+                current = ""
+        if current.strip():
+            sentences.append(current.strip())
         
         if len(sentences) < 2:
-            return "Texte trop court", text[:100] + "..." if len(text) > 100 else text
+            return "Texte trop court", text[:200] + "..."
         
-        # Calcul des fréquences de mots (sans stopwords)
-        stopwords = set(nltk.corpus.stopwords.words('french' if lang == 'fr' else 'english'))
-        word_freq = {}
-        for word in nltk.word_tokenize(text.lower()):
-            if word.isalpha() and word not in stopwords:
-                word_freq[word] = word_freq.get(word, 0) + 1
-        
-        # Scoring des phrases
-        sentence_scores = {}
-        for i, sentence in enumerate(sentences):
-            # Score basé sur les mots importants
-            score = sum(word_freq.get(word.lower(), 0) for word in nltk.word_tokenize(sentence) if word.isalpha())
+        # Calcul des scores avec CamemBERT
+        sentence_scores = []
+        for i, sent in enumerate(sentences):
+            # Embedding moyen de la phrase
+            sent_inputs = tokenizer(sent, return_tensors="pt", truncation=True)
+            with torch.no_grad():
+                sent_embedding = model(**sent_inputs).last_hidden_state.mean(dim=1)
             
-            # Bonus pour les premières phrases
-            position_weight = 1.0 - (0.5 * i / len(sentences))
-            sentence_scores[sentence] = score * position_weight
+            # Similarité avec l'embedding global
+            score = torch.cosine_similarity(embeddings.mean(dim=0), sent_embedding)
+            sentence_scores.append((sent, score.item(), i))
         
-        # Sélection des meilleures phrases
-        top_sentences = sorted(sentence_scores.items(), key=lambda x: -x[1])[:int(len(sentences)*ratio)]
-        summary = ' '.join([s[0] for s in sorted(top_sentences, key=lambda x: sentences.index(x[0]))])
+        # Sélection des phrases
+        sentence_scores.sort(key=lambda x: -x[1])
+        selected = sorted(sentence_scores[:int(len(sentences)*ratio)], key=lambda x: x[2])
+        summary = ' '.join([s[0] for s in selected])
         
-        # Calcul des métriques
-        orig_words = len(text.split())
-        summ_words = len(summary.split())
-        reduction = f"{orig_words}→{summ_words} mots (-{int(100*(1-summ_words/orig_words))}%)"
+        # Métriques
+        orig_len = len(text.split())
+        summ_len = len(summary.split())
+        reduction = int(100*(1 - summ_len/orig_len)) if orig_len > 0 else 0
         
-        return f"Résumé NLTK ({'FR' if lang == 'fr' else 'EN'}) - {reduction}", summary
+        return f"Résumé CamemBERT (FR) - {orig_len}→{summ_len} mots (-{reduction}%)", summary
         
     except Exception as e:
         return f"Erreur: {str(e)}", ""
-
 # Fonction pour le résumé abstractif
 def abstractive_summarize(text):
     try:
