@@ -93,7 +93,7 @@ def main():
                         <div style='
                             padding: 15px;
                             border-radius: 5px;
-                            background-color: #f0f2f6;
+                            background-color: black;
                             border-left: 4px solid #4e79a7;
                         '>
                         {summary}
