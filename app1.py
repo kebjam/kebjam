@@ -172,11 +172,16 @@ def abstractive_summarize(text):
         
         summary = tokenizer.decode(outputs[0], skip_special_tokens=True)
         
+        # Calcul de la réduction
+        orig_length = len(text.split())
+        summ_length = len(summary.split())
+        reduction = f"Réduction: {orig_length} mots → {summ_length} mots (-{int(100*(1-summ_length/orig_length))}%)"
+        
         # Libérer la mémoire GPU
         if torch.cuda.is_available():
             torch.cuda.empty_cache()  
             
-        return f"**Résumé Abstractif ({'Français' if lang == 'fr' else 'Anglais'} détecté):**", summary
+        return f"**Résumé Abstractif ({'Français' if lang == 'fr' else 'Anglais'} détecté) - {reduction}**", summary
         
     except Exception as e:
         return f"Erreur: {str(e)}", ""
