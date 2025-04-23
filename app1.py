@@ -142,14 +142,14 @@ def abstractive_summarize(text):
             inputs = tokenizer(
                 "summarize: " + text,
                 return_tensors="pt",
-                max_length=100
+                max_length=100,
                 truncation=True
             )
         else:
             inputs = tokenizer(
                 text,
                 return_tensors="pt",
-                max_length=100
+                max_length=100,
                 truncation=True
             )
         
