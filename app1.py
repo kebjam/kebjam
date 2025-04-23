@@ -20,7 +20,8 @@ st.markdown("""
     .summary-box {
         padding: 15px;
         border-radius: 5px;
-        background-color: #f0f2f6;
+        background-color: white;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
         border-left: 4px solid #4e79a7;
         margin-top: 10px;
     }
@@ -141,14 +142,14 @@ def abstractive_summarize(text):
             inputs = tokenizer(
                 "summarize: " + text,
                 return_tensors="pt",
-                max_length=1024,
+                max_length=100
                 truncation=True
             )
         else:
             inputs = tokenizer(
                 text,
                 return_tensors="pt",
-                max_length=1024,
+                max_length=100
                 truncation=True
             )
         
