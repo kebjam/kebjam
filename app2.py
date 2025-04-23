@@ -67,28 +67,32 @@ def load_abstractive_model(lang):
 # Fonction pour le résumé extractif 
 @lru_cache(maxsize=None)
 def load_extractive_model():
-    # Correction : utiliser text2text-generation
-    return pipeline("text2text-generation", model="ml6team/bert-extractive-summarizer")
+  
+    return pipeline(
+        "summarization", 
+        model="linydub/bart-large-samsum-extractive",  # Modèle spécialisé extractif
+        device="cuda" if torch.cuda.is_available() else "cpu"
+    )
 
 def extractive_summarize(text):
     try:
+        # Détection langue
         lang = detect(text[:500])
         if lang not in ['fr', 'en']:
             return "Langue non supportée", ""
             
+        # Génération du résumé
         model = load_extractive_model()
-        # Paramètres optimisés pour l'extraction
-        summary = model(
+        result = model(
             text,
-            max_length=len(text)//2,  # Moins restrictif
+            max_length=len(text)//2,
             min_length=len(text)//4,
             do_sample=False,
             truncation=True
-        )[0]['generated_text']  # Clé corrigée ('generated_text' au lieu de 'summary_text')
+        )
         
-        orig_length = len(text.split())
-        summ_length = len(summary.split())
-        reduction = f"Réduction: {orig_length} → {summ_length} mots (-{int(100*(1-summ_length/orig_length))}%)"
+        summary = result[0]['summary_text']
+        reduction = f"Réduction: {len(text.split())} → {len(summary.split())} mots"
         
         return f"Résumé Extractif ({'FR' if lang == 'fr' else 'EN'}) - {reduction}", summary
         
