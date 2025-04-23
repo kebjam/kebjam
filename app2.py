@@ -67,22 +67,28 @@ def load_abstractive_model(lang):
 # Fonction pour le résumé extractif 
 @lru_cache(maxsize=None)
 def load_extractive_model():
-    # Modèle spécialisé en extraction de phrases clés
-    return pipeline("summarization", model="ml6team/bert-extractive-summarizer")  # Changé en "summarization"
+    # Correction : utiliser text2text-generation
+    return pipeline("text2text-generation", model="ml6team/bert-extractive-summarizer")
 
 def extractive_summarize(text):
     try:
-        lang = detect(text[:500])  # Détection sur les 500 premiers caractères
+        lang = detect(text[:500])
         if lang not in ['fr', 'en']:
             return "Langue non supportée", ""
             
         model = load_extractive_model()
-        summary = model(text, max_length=len(text)//4)[0]['summary_text']
+        # Paramètres optimisés pour l'extraction
+        summary = model(
+            text,
+            max_length=len(text)//2,  # Moins restrictif
+            min_length=len(text)//4,
+            do_sample=False,
+            truncation=True
+        )[0]['generated_text']  # Clé corrigée ('generated_text' au lieu de 'summary_text')
         
-        # Calcul de la réduction
         orig_length = len(text.split())
         summ_length = len(summary.split())
-        reduction = f"Réduction: {orig_length} mots → {summ_length} mots (-{int(100*(1-summ_length/orig_length))}%)"
+        reduction = f"Réduction: {orig_length} → {summ_length} mots (-{int(100*(1-summ_length/orig_length))}%)"
         
         return f"Résumé Extractif ({'FR' if lang == 'fr' else 'EN'}) - {reduction}", summary
         
