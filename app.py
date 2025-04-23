@@ -3,12 +3,22 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from langdetect import detect
 import torch
 
-# Configuration de l'application
+# Configuration pour mobiles
 st.set_page_config(
-    page_title="Résumé Automatique Bilingue",
-    page_icon=" ",
-    layout="wide"
+    page_title="Résumé Automatique Mobile",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
+
+# Meta-tag pour viewport mobile
+st.markdown("""
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<style>
+    .stTextArea textarea {font-size: 16px !important;}
+    .stButton>button {width: 100%;}
+    .stAlert {font-size: 14px;}
+</style>
+""", unsafe_allow_html=True)
 
 # Cache les modèles
 @st.cache_resource
