@@ -139,18 +139,23 @@ def abstractive_summarize(text):
     try:
         model, tokenizer = load_abstractive_model(lang)
         
+        # Tokenize sans troncation pour calculer la longueur totale
+        full_tokens = tokenizer(text, return_tensors="pt", truncation=False)
+        input_length = len(full_tokens['input_ids'][0])
+        dynamic_max_length = input_length // 4  # 1/4 de la longueur totale
+
         if lang == 'fr':
             inputs = tokenizer(
                 "summarize: " + text,
                 return_tensors="pt",
-                max_length=100,
+                max_length=dynamic_max_length,  # Longueur dynamique
                 truncation=True
             )
         else:
             inputs = tokenizer(
                 text,
                 return_tensors="pt",
-                max_length=100,
+                max_length=dynamic_max_length,  # Longueur dynamique
                 truncation=True
             )
         
@@ -171,7 +176,7 @@ def abstractive_summarize(text):
         
         # Libérer la mémoire GPU
         if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+            torch.cuda.empty_cache()  
             
         return f"**Résumé Abstractif ({'Français' if lang == 'fr' else 'Anglais'} détecté):**", summary
         
