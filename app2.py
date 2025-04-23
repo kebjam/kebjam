@@ -208,38 +208,19 @@ def main():
             - **Résumé Abstractif**: Génère un nouveau texte qui capture l'essentiel du contenu. Plus proche d'un résumé humain mais utilise plus de ressources.
             """)
         
-        if not text.strip():
+        if not text:
             st.info("Veuillez entrer un texte à résumer")
         elif len(text) < 50:
             st.warning("Veuillez entrer un texte plus long (minimum 50 caractères)")
         else:
             # Traitement des boutons
             if extractive_button:
-                with st.spinner("Génération du résumé extractif en cours..."):
-                    try:
-                        title, summary = extractive_summarize(text)
-                        
-                        if summary and summary.strip():  # Vérification renforcée
-                            st.success(title)
-                            st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
-                            
-                            # Affichage des statistiques
-                            orig_words = len(text.split())
-                            summ_words = len(summary.split())
-                            
-                            if orig_words > 0:  # Protection contre division par zéro
-                                reduction = int(100*(1-summ_words/orig_words))
-                                st.caption(f"Réduction : {orig_words} mots → {summ_words} mots (-{reduction}%)")
-                            else:
-                                st.caption("Statistiques non disponibles")
-                            
-                        else:
-                            st.warning("Le résumé généré est vide. Essayez avec un texte plus long ou plus structuré.")
-                            st.info("Conseil : Les textes avec des phrases complètes (terminées par des points) fonctionnent mieux")
-                            
-                    except Exception as e:
-                        st.error(f"Erreur technique : {str(e)}")
-                        st.info("Essayez de relancer ou de réduire la longueur du texte")
+                title, summary = extractive_summarize(text)
+                if summary:
+                    st.success(title)
+                    st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
+                else:
+                    st.error("Impossible de générer un résumé extractif")
             
             if abstractive_button:
                 with st.spinner("Génération du résumé en cours..."):
