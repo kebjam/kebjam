@@ -2,29 +2,28 @@ import streamlit as st
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from langdetect import detect
 import torch
-from transformers import pipeline
-import numpy as np
 
-# Configuration pour optimiser l'utilisation de la mémoire
+# Configuration pour mobiles et optimisation mémoire
 st.set_page_config(
-    page_title="Résumé Automatique",
+    page_title="Résumé Automatique Mobile",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Meta-tag pour viewport mobile et styles CSS
+# Style mobile et optimisations
 st.markdown("""
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
     .stTextArea textarea {font-size: 16px !important;}
     .stButton>button {width: 100%;}
     .stAlert {font-size: 14px;}
-    .output-text {
-        color: black !important;
-        background-color: #f0f2f6;
+    .summary-box {
         padding: 15px;
         border-radius: 5px;
+        background-color: #f0f2f6;
         border-left: 4px solid #4e79a7;
+        margin-top: 10px;
+        color: black !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -36,158 +35,193 @@ def clear_memory():
 
 # Cache les modèles de manière optimisée
 @st.cache_resource
-def load_abstractive_fr_model():
+def load_model_fr():
     with st.spinner("Chargement du modèle français..."):
-        model = AutoModelForSeq2SeqLM.from_pretrained(
+        model_fr = AutoModelForSeq2SeqLM.from_pretrained(
             "plguillou/t5-base-fr-sum-cnndm",
-            device_map="auto",
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            low_cpu_mem_usage=True
-        )
-        tokenizer = AutoTokenizer.from_pretrained("plguillou/t5-base-fr-sum-cnndm")
-        return model, tokenizer
-
-@st.cache_resource
-def load_abstractive_en_model():
-    with st.spinner("Chargement du modèle anglais..."):
-        model = AutoModelForSeq2SeqLM.from_pretrained(
-            "facebook/bart-large-cnn",
-            device_map="auto",
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            low_cpu_mem_usage=True
-        )
-        tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large-cnn")
-        return model, tokenizer
-
-@st.cache_resource
-def load_extractive_summarizer():
-    with st.spinner("Chargement du modèle extractif..."):
-        summarizer = pipeline(
-            "summarization", 
-            model="facebook/bart-large-cnn",
-            device=0 if torch.cuda.is_available() else -1,
+            device_map="auto" if torch.cuda.is_available() else None,
             torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
         )
-        return summarizer
+        tokenizer_fr = AutoTokenizer.from_pretrained("plguillou/t5-base-fr-sum-cnndm")
+        return model_fr, tokenizer_fr
 
-# Fonction pour le résumé extractif
-def extractive_summarize(text, lang):
-    # Version simplifiée de l'algorithme extractif basé sur TF-IDF
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    import nltk
-    nltk.download('punkt', quiet=True)
+@st.cache_resource
+def load_model_en():
+    with st.spinner("Chargement du modèle anglais..."):
+        model_en = AutoModelForSeq2SeqLM.from_pretrained(
+            "facebook/bart-large-cnn",
+            device_map="auto" if torch.cuda.is_available() else None,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+        )
+        tokenizer_en = AutoTokenizer.from_pretrained("facebook/bart-large-cnn")
+        return model_en, tokenizer_en
+
+# Fonction pour le résumé extractif - utilise des statistiques simples
+def extractive_summarize(text, ratio=0.3):
+    # Détection de la langue
+    try:
+        lang = detect(text)
+    except:
+        return "Erreur de détection de langue", ""
     
-    # Division du texte en phrases
-    sentences = nltk.sent_tokenize(text)
+    if lang not in ['fr', 'en']:
+        return "Langue non supportée (FR/EN seulement)", ""
     
-    # Si le texte est trop court
-    if len(sentences) <= 3:
-        return text
+    # Split text into sentences
+    if lang == 'fr':
+        sentence_separators = ['.', '!', '?', '...', '\n']
+    else:
+        sentence_separators = ['.', '!', '?', '...', '\n']
     
-    # Calcul des scores TF-IDF
-    vectorizer = TfidfVectorizer(stop_words='english' if lang == 'en' else None)
-    tfidf_matrix = vectorizer.fit_transform(sentences)
+    sentences = []
+    current_sentence = ""
     
-    # Calcul des scores de chaque phrase
-    sentence_scores = np.sum(tfidf_matrix.toarray(), axis=1)
+    for char in text:
+        current_sentence += char
+        if any(current_sentence.strip().endswith(sep) for sep in sentence_separators):
+            if current_sentence.strip():
+                sentences.append(current_sentence.strip())
+            current_sentence = ""
     
-    # Sélection des phrases les plus importantes (30% du texte original)
-    num_sentences = max(3, int(len(sentences) * 0.3))
-    top_indices = sentence_scores.argsort()[-num_sentences:]
-    top_indices = sorted(top_indices)
+    if current_sentence.strip():
+        sentences.append(current_sentence.strip())
     
-    # Construction du résumé
-    summary = " ".join([sentences[i] for i in top_indices])
-    return summary
+    if not sentences:
+        return "Pas assez de texte pour résumer", ""
+    
+    # Score sentences by length and position
+    scored_sentences = []
+    for i, sentence in enumerate(sentences):
+        # Score based on position (beginning sentences are usually more important)
+        position_score = 1.0 if i < len(sentences) // 3 else 0.5
+        
+        # Score based on length (ignore very short sentences)
+        length_score = min(1.0, len(sentence) / 100)
+        
+        # Combine scores
+        total_score = position_score * 0.6 + length_score * 0.4
+        
+        scored_sentences.append((sentence, total_score))
+    
+    # Sort by score and select top sentences
+    scored_sentences.sort(key=lambda x: x[1], reverse=True)
+    num_sentences = max(1, int(len(sentences) * ratio))
+    summary_sentences = [s[0] for s in scored_sentences[:num_sentences]]
+    
+    # Reorder sentences based on original position
+    original_order = {}
+    for i, sentence in enumerate(sentences):
+        if sentence in [s[0] for s in scored_sentences[:num_sentences]]:
+            original_order[sentence] = i
+    
+    summary_sentences.sort(key=lambda s: original_order.get(s, 0))
+    
+    # Join sentences
+    summary = " ".join(summary_sentences)
+    
+    return f"**Résumé Extractif ({'Français' if lang == 'fr' else 'Anglais'} détecté):**", summary
 
 # Fonction pour le résumé abstractif
-def abstractive_summarize(text, lang):
+def abstractive_summarize(text):
+    try:
+        lang = detect(text)
+    except:
+        return "Erreur de détection de langue", ""
+    
+    if lang not in ['fr', 'en']:
+        return "Langue non supportée (FR/EN seulement)", ""
+    
     try:
         if lang == 'fr':
-            model, tokenizer = load_abstractive_fr_model()
-            inputs = tokenizer("summarize: " + text, return_tensors="pt", max_length=1024, truncation=True).to(model.device)
-            outputs = model.generate(
+            model_fr, tokenizer_fr = load_model_fr()
+            inputs = tokenizer_fr(
+                "summarize: " + text,
+                return_tensors="pt",
+                max_length=1024,
+                truncation=True
+            ).to(model_fr.device)
+            outputs = model_fr.generate(
                 inputs.input_ids,
                 max_length=150,
                 num_beams=4,
                 early_stopping=True
             )
-            summary = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
-        elif lang == 'en':
-            model, tokenizer = load_abstractive_en_model()
-            inputs = tokenizer(text, return_tensors="pt", max_length=1024, truncation=True).to(model.device)
-            outputs = model.generate(
+            summary = tokenizer_fr.decode(outputs[0], skip_special_tokens=True)
+        else:  # 'en'
+            model_en, tokenizer_en = load_model_en()
+            inputs = tokenizer_en(
+                text,
+                return_tensors="pt",
+                max_length=1024,
+                truncation=True
+            ).to(model_en.device)
+            outputs = model_en.generate(
                 inputs.input_ids,
                 max_length=150,
                 num_beams=4,
                 early_stopping=True
             )
-            summary = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        else:
-            summary = "Langue non supportée (FR/EN seulement)"
-            
+            summary = tokenizer_en.decode(outputs[0], skip_special_tokens=True)
+        
         # Libérer la mémoire
         clear_memory()
-        return summary
+        
+        return f"**Résumé Abstractif ({'Français' if lang == 'fr' else 'Anglais'} détecté):**", summary
+        
     except Exception as e:
-        return f"Erreur lors du résumé abstractif: {str(e)}"
+        return f"Erreur: {str(e)}", ""
 
-# Interface utilisateur
+# Interface utilisateur principale
 def main():
     st.title("Résumé Automatique (FR/EN)")
     
-    # Choix du type de résumé
-    col1, col2 = st.columns(2)
-    with col1:
-        extractive_btn = st.button("Résumé Extractif", use_container_width=True, 
-                                  help="Extraits les phrases les plus importantes du texte original")
-    with col2:
-        abstractive_btn = st.button("Résumé Abstractif", use_container_width=True,
-                                   help="Génère un nouveau texte résumant les idées principales")
+    # Préparation des onglets
+    tab1, tab2 = st.tabs(["Résumé de texte", "À propos"])
     
-    # Zone de texte
-    text = st.text_area("Texte à résumer", height=300)
-    
-    # Traitement du résumé
-    if (extractive_btn or abstractive_btn) and text:
-        if len(text) < 50:
+    with tab1:
+        text = st.text_area("Texte à résumer", height=250)
+        
+        # Les deux boutons côte à côte
+        col1, col2 = st.columns(2)
+        with col1:
+            extractive_button = st.button("Résumé Extractif", type="secondary", use_container_width=True)
+        with col2:
+            abstractive_button = st.button("Résumé Abstractif", type="primary", use_container_width=True)
+        
+        # Affichage d'informations sur les boutons
+        with st.expander("Quelle méthode choisir?"):
+            st.markdown("""
+            - **Résumé Extractif**: Sélectionne les phrases les plus importantes du texte original. Plus rapide, moins de ressources.
+            - **Résumé Abstractif**: Génère un nouveau texte qui capture l'essentiel du contenu. Plus proche d'un résumé humain mais utilise plus de ressources.
+            """)
+        
+        if not text:
+            st.info("Veuillez entrer un texte à résumer")
+        elif len(text) < 50:
             st.warning("Veuillez entrer un texte plus long (minimum 50 caractères)")
         else:
-            with st.spinner("Analyse en cours..."):
-                try:
-                    # Détection de la langue
-                    lang = detect(text)
-                    
-                    if lang not in ['fr', 'en']:
-                        st.error("Langue non supportée. Veuillez utiliser du français ou de l'anglais.")
+            # Traitement des boutons
+            if extractive_button:
+                title, summary = extractive_summarize(text)
+                if summary:
+                    st.success(title)
+                    st.markdown(f'<div class="summary-box">{summary}</div>', unsafe_allow_html=True)
+                else:
+                    st.error("Impossible de générer un résumé extractif")
+            
+            if abstractive_button:
+                with st.spinner("Génération du résumé abstractif en cours..."):
+                    title, summary = abstractive_summarize(text)
+                    if summary:
+                        st.success(title)
+                        st.markdown(f'<div class="summary-box">{summary}</div>', unsafe_allow_html=True)
                     else:
-                        # Appliquer le type de résumé choisi
-                        if extractive_btn:
-                            summary = extractive_summarize(text, lang)
-                            method = "Extractif"
-                        else:  # abstractive_btn
-                            summary = abstractive_summarize(text, lang)
-                            method = "Abstractif"
-                        
-                        # Affichage du résultat
-                        lang_display = "Français" if lang == 'fr' else "English"
-                        st.success(f"**Résumé {method} ({lang_display} détecté):**")
-                        
-                        st.markdown(f"""
-                        <div class="output-text">
-                        {summary}
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                except Exception as e:
-                    st.error(f"Erreur: {str(e)}")
-                    
-                # Libérer la mémoire à la fin
-                clear_memory()
+                        st.error("Impossible de générer un résumé abstractif")
+                    # Libérer la mémoire
+                    clear_memory()
     
-    # Footer avec instructions
-    st.markdown("""
+    with tab2:
+        st.markdown("""
         ### À propos de l'application
         
         Cette application propose deux méthodes de résumé automatique:
@@ -206,9 +240,6 @@ def main():
         
         *Développé avec Streamlit et Hugging Face Transformers*
         """)
-    st.caption("**Instructions**: Choisissez d'abord le type de résumé puis entrez votre texte. Le résumé extractif est plus rapide mais moins fluide, tandis que le résumé abstractif est plus naturel mais prend plus de temps.")
 
-# Exécution de l'application
 if __name__ == "__main__":
     main()
-
