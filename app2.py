@@ -5,9 +5,12 @@ import torch
 # import gradio as gr  # Commenté car non utilisé
 from transformers import pipeline
 from functools import lru_cache
+<<<<<<< HEAD
 
 
 
+=======
+>>>>>>> 88dc67977bf2da95159e6078f5994257b02e1480
 
 
 # Configuration pour mobiles et optimisation mémoire
