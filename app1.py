@@ -229,24 +229,37 @@ def main():
     
     with tab2:
         st.markdown("""
-        ### À propos de l'application
-        
-        Cette application propose deux méthodes de résumé automatique:
-        
-        **Résumé Extractif**:
-        - Sélectionne les phrases importantes du texte original
-        - Utilise des statistiques pour identifier les phrases clés
-        - Rapide et léger en ressources
-        
-        **Résumé Abstractif**:
-        - Utilise l'IA pour générer un nouveau texte capturant l'essence du contenu
-        - Plus proche d'un résumé humain
-        - Utilise des modèles de langage avancés
-        
-        L'application détecte automatiquement si votre texte est en français ou en anglais.
-        
-        *Développé avec Streamlit et Hugging Face Transformers*
-        """)
+                ### Conception et Développement de l'Application
+
+                Les auteurs de cette application ont structuré leur travail en plusieurs étapes claires :
+                - **Pré-traitement et extraction des features** : Cette phase cruciale a consisté à nettoyer les textes d'entrée et à extraire les caractéristiques linguistiques pertinentes. Les développeurs ont implémenté des techniques de segmentation de phrases, de normalisation du texte et d'analyse statistique pour préparer les données avant le traitement.
+                - **Résumé automatique** : Le cœur du système comprend deux approches distinctes. La solution extractive utilise des algorithmes statistiques pour sélectionner les phrases clés, tandis que la méthode abstractive s'appuie sur des modèles de langage avancés (BARTHEZ pour le français et DistilBART pour l'anglais) pour générer des résumés fluides.
+                - **Déploiement sur API** : L'équipe a finalisé le projet en mettant en place une interface Streamlit conviviale, permettant un accès simple et rapide aux fonctionnalités depuis n'importe quel navigateur web.
+
+                ### Approche Extractive : Mécanisme et Caractéristiques
+
+                Le **résumé extractif** repose sur une méthodologie statistique éprouvée :
+                - **Fonctionnement** : Le système identifie et extrait les phrases les plus représentatives du texte source en analysant leur position dans le document et leur longueur. Les phrases situées en début de texte et de taille moyenne reçoivent un score plus élevé.
+                - **Avantages** : Cette méthode offre une rapidité d'exécution remarquable et nécessite peu de ressources système. Elle préserve intégralement la formulation originale, garantissant une exactitude terminologique.
+                - **Limitations** : Le résumé produit peut manquer de fluidité entre les phrases sélectionnées et ne capture pas toujours les idées implicites nécessitant une reformulation.
+
+                ### Approche Abstractive : Technologie et Performances
+
+                La solution de **résumé abstractif** met en œuvre des technologies avancées de NLP :
+                - **Principe** : Contrairement à l'approche extractive, cette méthode génère du texte complètement nouveau en s'appuyant sur des transformers (BARTHEZ et DistilBART) spécialement entraînés pour la synthèse de contenu.
+                - **Points forts** : Capable de produire des résumés plus naturels et concis, cette approche excelle dans la reformulation des idées et la compression d'information tout en maintenant la cohérence du discours.
+                - **Contraintes** : Elle nécessite davantage de ressources computationnelles et peut occasionnellement introduire des hallucinations ou des approximations, particulièrement sur des textes très techniques.
+
+                ### Détection Automatique de Langue
+
+                L'application intègre un système intelligent de reconnaissance linguistique :
+                - **Mécanisme** : Par l'analyse des 500 premiers caractères du texte, le module langdetect détermine automatiquement si le contenu est en français ou en anglais avec une précision supérieure à 95%.
+                - **Fonctionnalité** : Cette détection permet d'orienter automatiquement le traitement vers le modèle linguistique approprié, offrant ainsi une expérience utilisateur transparente sans nécessiter de sélection manuelle.
+                - **Couverture** : Bien que spécialisée pour le français et l'anglais, l'application peut identifier d'autres langues pour afficher un message d'erreur approprié guidant l'utilisateur.
+                    
+
+                ### Auteurs : Alex, Kebjam, Firhoun
+                        """)
 
 if __name__ == "__main__":
     main()
