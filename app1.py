@@ -63,68 +63,63 @@ def load_abstractive_model(lang):
 
 # Fonction pour le résumé extractif 
 def extractive_summarize(text, ratio=0.3):
-    # Détection de la langue
+    # Détection de langue avec gestion d'erreur
     try:
-        lang = detect(text)
+        lang = detect(text[:500])  # Analyse les 1000 premiers caractères pour plus de stabilité
     except:
-        return "Erreur de détection de langue", ""
+        return "Erreur: Impossible de détecter la langue", ""
     
     if lang not in ['fr', 'en']:
-        return "Langue non supportée (FR/EN seulement)", ""
+        return f"Langue non supportée ({lang}) - FR/EN seulement", ""
+
+    # Découpage avancé des phrases (multilingue)
+    sentence_endings = r'(?<=[.!?…])\s+'  # Regex pour français/anglais
+    sentences = [s.strip() for s in re.split(sentence_endings, text) if s.strip()]
     
-    # Split text into sentences
-    if lang == 'fr':
-        sentence_separators = ['.', '!', '?', '...', '\n']
-    else:
-        sentence_separators = ['.', '!', '?', '...', '\n']
-    
-    sentences = []
-    current_sentence = ""
-    
-    for char in text:
-        current_sentence += char
-        if any(current_sentence.strip().endswith(sep) for sep in sentence_separators):
-            if current_sentence.strip():
-                sentences.append(current_sentence.strip())
-            current_sentence = ""
-    
-    if current_sentence.strip():
-        sentences.append(current_sentence.strip())
-    
-    if not sentences:
-        return "Pas assez de texte pour résumer", ""
-    
-    # Score sentences by length and position
+    if len(sentences) < 2:
+        return "Texte trop court pour résumer", ""
+
+    # Score des phrases avec critères améliorés
     scored_sentences = []
-    for i, sentence in enumerate(sentences):
-        # Score based on position (beginning sentences are usually more important)
-        position_score = 1.0 if i < len(sentences) // 3 else 0.5
-        
-        # Score based on length (ignore very short sentences)
-        length_score = min(1.0, len(sentence) / 100)
-        
-        # Combine scores
-        total_score = position_score * 0.6 + length_score * 0.4
-        
-        scored_sentences.append((sentence, total_score))
+    avg_length = sum(len(s.split()) for s in sentences) / len(sentences)
     
-    # Sort by score and select top sentences
+    for i, sentence in enumerate(sentences):
+        # Score de position (courbe gaussienne centrée sur le début)
+        position_score = 1 / (1 + 0.5 * (i / len(sentences))**2)
+        
+        # Score de longueur (normalisé par rapport à la moyenne)
+        length_score = min(1.5, len(sentence.split()) / avg_length)
+        
+        # Score de densité (mots clés)
+        keywords = ['important', 'crucial', 'solution'] if lang == 'en' else ['important', 'solution']
+        keyword_score = 0.5 * sum(sentence.lower().count(kw) for kw in keywords)
+        
+        # Combinaison pondérée
+        total_score = 0.4*position_score + 0.3*length_score + 0.3*keyword_score
+        scored_sentences.append((sentence, total_score, i))
+
+    # Sélection et réorganisation
     scored_sentences.sort(key=lambda x: x[1], reverse=True)
-    num_sentences = max(1, int(len(sentences) * ratio))
-    summary_sentences = [s[0] for s in scored_sentences[:num_sentences]]
+    top_sentences = sorted(
+        scored_sentences[:max(2, int(len(sentences)*ratio))],
+        key=lambda x: x[2]  # Tri par position originale
+    )
     
-    # Reorder sentences based on original position
-    original_order = {}
-    for i, sentence in enumerate(sentences):
-        if sentence in [s[0] for s in scored_sentences[:num_sentences]]:
-            original_order[sentence] = i
+    # Construction du résumé
+    summary = ' '.join([s[0] for s in top_sentences])
     
-    summary_sentences.sort(key=lambda s: original_order.get(s, 0))
+    # Calcul des métriques
+    orig_words = len(text.split())
+    summ_words = len(summary.split())
+    reduction_pct = int(100*(1 - summ_words/orig_words)) if orig_words > 0 else 0
     
-    # Join sentences
-    summary = " ".join(summary_sentences)
+    # Formatage du retour
+    title = (
+        f"**Résumé Extractif ({'Français' if lang == 'fr' else 'Anglais'})**\n"
+        f"Réduction: {orig_words} → {summ_words} mots (-{reduction_pct}%)"
+    )
     
-    return f"**Résumé Extractif ({'Français' if lang == 'fr' else 'Anglais'} détecté):**", summary
+    return title, summary
 
 # Fonction pour le résumé abstractif
 def abstractive_summarize(text):
@@ -234,8 +229,6 @@ def main():
     
     with tab2:
         st.markdown("""
-            ### **Présentation des Modèles de Résumé Automatique**
-
             #### **1. Modèle Français : `plguillou/t5-base-fr-sum-cnndm**  
             **Type** : Modèle **T5 (Text-To-Text Transfer Transformer)** optimisé pour le français.  
             **Approche** : **Abstractive** (génération de nouveaux textes plutôt que simple extraction).  
@@ -263,19 +256,6 @@ def main():
             **Limitations** :  
             ✖ **Très gourmand en ressources** (~1.5 Go), lent sans GPU.  
             ✖ **Nécessite des prompts adaptés** pour des textes hors domaine journalistique.  
-
-            ---
-
-            ### **Comparaison Rapide**  
-            | Critère               | `plguillou/t5-base-fr-sum-cnndm` (FR) | `facebook/bart-large-cnn` (EN) |  
-            |-----------------------|--------------------------------------|--------------------------------|  
-            | **Langue**            | Français                             | Anglais                        |  
-            | **Approche**          | Abstractive                          | Abstractive + Extractif        |  
-            | **Fluidité**          | ⭐⭐⭐⭐☆                              | ⭐⭐⭐⭐⭐                        |  
-            | **Besoins GPU**       | Recommandé                          | Obligatoire pour vitesse       |  
-            | **Cas d'usage**       | Textes généraux                     | Articles, rapports             |  
-
-            Ces modèles sont **complémentaires** : le premier comble le manque d'outils francophones, tandis que le second reste une référence pour l'anglais.
                     """)
     with tab3:
         st.markdown("""
@@ -308,7 +288,10 @@ def main():
                 - **Couverture** : Bien que spécialisée pour le français et l'anglais, l'application peut identifier d'autres langues pour afficher un message d'erreur approprié guidant l'utilisateur.
                     
 
-                ### Auteurs : Alex, Kebjam, Firhoun
+                ###### Auteurs : 
+                           Alex Trésor MEZANVOU KAMFOUN, 
+                           Kebjam JACKSON et 
+                           Ahmed Firhoun Oumarou SOULEYE
                 """)    
 
 if __name__ == "__main__":
