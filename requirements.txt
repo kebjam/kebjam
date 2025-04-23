@@ -6,3 +6,4 @@ langdetect>=1.0.9
 sentencepiece>=0.2.0
 protobuf<4.0.0  # Important pour la compatibilité
 accelerate>=0.30.1  # Nécessaire pour les modèles récents
+nltk
