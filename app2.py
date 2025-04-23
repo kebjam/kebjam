@@ -186,8 +186,8 @@ def main():
                 if summary:
                     st.success(title)
                     st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
-                else:
-                    st.error("Impossible de générer un résumé extractif")
+                #else:
+                #    st.error("Impossible de générer un résumé extractif")
             
             if abstractive_button:
                 with st.spinner("Génération du résumé en cours..."):
