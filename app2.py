@@ -8,6 +8,17 @@ from functools import lru_cache
 import nltk
 
 
+# Téléchargement silencieux si punkt n'est pas présent
+def setup_nltk():
+    try:
+        nltk.data.find("tokenizers/punkt")
+    except LookupError:
+        with st.spinner("Téléchargement des ressources NLTK..."):
+            nltk.download("punkt")
+
+setup_nltk()
+
+
 # Configuration pour mobiles et optimisation mémoire
 st.set_page_config(
     page_title="Résumé Automatique Mobile",
