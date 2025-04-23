@@ -72,36 +72,17 @@ def load_abstractive_model(lang):
 # Fonction pour le résumé extractif 
 @lru_cache(maxsize=None)
 def load_extractive_model():
-    return pipeline("text-classification", model="distilbert-base-multilingual-cased")
+    # Modèle spécialisé en extraction de phrases clés
+    return pipeline("text2text-generation", model="ml6team/bert-extractive-summarizer")
 
-def extractive_summarize(text, ratio=0.3):
+def extractive_summarize(text):
     try:
-        # Détection de langue
-        lang = detect(text[:500])
-        
+        lang = detect(text[:500])  # Détection sur les 500 premiers caractères
         if lang not in ['fr', 'en']:
             return "Langue non supportée", ""
             
-        # Chargement du modèle extractif
         model = load_extractive_model()
-        
-        # Découpage en phrases simplifié
-        sentences = [s.strip() for s in text.split('.') if s.strip()]
-        
-        if len(sentences) < 2:
-            return "Texte trop court", ""
-            
-        # Calcul des scores d'importance
-        scores = []
-        for sent in sentences:
-            # Utilisation du modèle pour évaluer l'importance
-            result = model(sent[:512])  # Limite de taille pour DistilBERT
-            score = result[0]['score'] if result[0]['label'] == 'LABEL_1' else 1 - result[0]['score']
-            scores.append(score)
-            
-        # Sélection des meilleures phrases
-        selected = sorted(zip(sentences, scores), key=lambda x: x[1], reverse=True)[:int(len(sentences)*ratio)]
-        summary = '. '.join([s[0] for s in sorted(selected, key=lambda x: sentences.index(x[0]))]) + '.'
+        summary = model(text, max_length=len(text)//4)[0]['generated_text']
         
         return f"Résumé Extractif ({'FR' if lang == 'fr' else 'EN'})", summary
         
