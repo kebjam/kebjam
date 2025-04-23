@@ -61,33 +61,52 @@ def load_abstractive_model(lang):
                 torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
             )
             tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large-cnn")
+
+            orig_length = len(text.split())
+            summ_length = len(summary[0]['summary_text'].split())
+            reduction = f"Réduction: {orig_length} mots → {summ_length} mots (-{int(100*(1-summ_length/orig_length))}%)"
         
-        return model, tokenizer
+        #return model, tokenizer
+        return f"{model, tokenizer}\n\n{reduction}"
 
 # Fonction pour le résumé extractif 
 @lru_cache(maxsize=None)
-def load_model():
-    return pipeline("summarization", model="facebook/bart-large-cnn")
+def load_extractive_model():
+    return pipeline("text-classification", model="distilbert-base-multilingual-cased")
 
-def extractive_summarize(text):
-    if len(text.split()) < 10:
-        return "Erreur : Le texte est trop court. Veuillez entrer au moins 10 mots."
-    
+def extractive_summarize(text, ratio=0.3):
     try:
-        summarizer = load_model()
-        summary = summarizer(text, 
-                           max_length=150, 
-                           min_length=30, 
-                           do_sample=False,
-                           truncation=True)
+        # Détection de langue
+        lang = detect(text[:500])
         
-        orig_length = len(text.split())
-        summ_length = len(summary[0]['summary_text'].split())
-        reduction = f"Réduction: {orig_length} mots → {summ_length} mots (-{int(100*(1-summ_length/orig_length))}%)"
+        if lang not in ['fr', 'en']:
+            return "Langue non supportée", ""
+            
+        # Chargement du modèle extractif
+        model = load_extractive_model()
         
-        return f"**Résumé:**\n{summary[0]['summary_text']}\n\n{reduction}"
+        # Découpage en phrases simplifié
+        sentences = [s.strip() for s in text.split('.') if s.strip()]
+        
+        if len(sentences) < 2:
+            return "Texte trop court", ""
+            
+        # Calcul des scores d'importance
+        scores = []
+        for sent in sentences:
+            # Utilisation du modèle pour évaluer l'importance
+            result = model(sent[:512])  # Limite de taille pour DistilBERT
+            score = result[0]['score'] if result[0]['label'] == 'LABEL_1' else 1 - result[0]['score']
+            scores.append(score)
+            
+        # Sélection des meilleures phrases
+        selected = sorted(zip(sentences, scores), key=lambda x: x[1], reverse=True)[:int(len(sentences)*ratio)]
+        summary = '. '.join([s[0] for s in sorted(selected, key=lambda x: sentences.index(x[0]))]) + '.'
+        
+        return f"Résumé Extractif ({'FR' if lang == 'fr' else 'EN'})", summary
+        
     except Exception as e:
-        return f"Une erreur est survenue: {str(e)}"
+        return f"Erreur: {str(e)}", ""
 
 # Fonction pour le résumé abstractif
 def abstractive_summarize(text):
