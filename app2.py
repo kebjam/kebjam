@@ -7,15 +7,7 @@ from transformers import pipeline
 from functools import lru_cache
 
 
-# Téléchargement silencieux si punkt n'est pas présent
-def setup_nltk():
-    try:
-        nltk.data.find("tokenizers/punkt")
-    except LookupError:
-        with st.spinner("Téléchargement des ressources NLTK..."):
-            nltk.download("punkt")
 
-setup_nltk()
 
 
 # Configuration pour mobiles et optimisation mémoire
@@ -84,7 +76,7 @@ def load_camembert_model():
     model = CamembertModel.from_pretrained("camembert-base")
     return tokenizer, model
 
-def camembert_extractive_summarize(text, ratio=0.3):
+def extractive_summarize(text, ratio=0.3):
     try:
         # Chargement du modèle
         tokenizer, model = load_camembert_model()
