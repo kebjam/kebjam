@@ -1,15 +1,7 @@
 import streamlit as st
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from langdetect import detect
 import torch
-from transformers import pipeline
-import nltk
-
-# Télécharger les ressources NLTK nécessaires (si pas déjà fait)
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
-    nltk.download('stopwords')
 
 # Configuration pour mobiles et optimisation mémoire
 st.set_page_config(
@@ -41,17 +33,28 @@ def clear_memory():
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-# Cache le modèle simplifié de manière optimisée
+# Cache les modèles de manière optimisée
 @st.cache_resource
-def load_simple_model():
-    with st.spinner("Chargement du modèle léger..."):
-        # Utilisation du pipeline de résumé de Hugging Face avec un modèle plus léger
-        summarizer = pipeline(
-            "summarization", 
-            model="facebook/bart-large-cnn-samsum",  # Modèle plus léger pour le résumé de conversations
-            device=0 if torch.cuda.is_available() else -1,
+def load_model_fr():
+    with st.spinner("Chargement du modèle français..."):
+        model_fr = AutoModelForSeq2SeqLM.from_pretrained(
+            "moussaKam/barthez-orangesum-abstract",
+            device_map="auto" if torch.cuda.is_available() else None,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
         )
-        return summarizer
+        tokenizer_fr = AutoTokenizer.from_pretrained("moussaKam/barthez-orangesum-abstract")
+        return model_fr, tokenizer_fr
+
+@st.cache_resource
+def load_model_en():
+    with st.spinner("Chargement du modèle anglais..."):
+        model_en = AutoModelForSeq2SeqLM.from_pretrained(
+            "sshleifer/distilbart-cnn-12-6",
+            device_map="auto" if torch.cuda.is_available() else None,
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+        )
+        tokenizer_en = AutoTokenizer.from_pretrained("sshleifer/distilbart-cnn-12-6")
+        return model_en, tokenizer_en
 
 # Fonction pour le résumé extractif - utilise des statistiques simples
 def extractive_summarize(text, ratio=0.3):
@@ -64,68 +67,62 @@ def extractive_summarize(text, ratio=0.3):
     if lang not in ['fr', 'en']:
         return "Langue non supportée (FR/EN seulement)", ""
     
-    # Split text into sentences using NLTK
-    sentences = nltk.sent_tokenize(text, language='french' if lang == 'fr' else 'english')
+    # Split text into sentences
+    if lang == 'fr':
+        sentence_separators = ['.', '!', '?', '...', '\n']
+    else:
+        sentence_separators = ['.', '!', '?', '...', '\n']
+    
+    sentences = []
+    current_sentence = ""
+    
+    for char in text:
+        current_sentence += char
+        if any(current_sentence.strip().endswith(sep) for sep in sentence_separators):
+            if current_sentence.strip():
+                sentences.append(current_sentence.strip())
+            current_sentence = ""
+    
+    if current_sentence.strip():
+        sentences.append(current_sentence.strip())
     
     if not sentences:
         return "Pas assez de texte pour résumer", ""
     
-    # Récupérer les stopwords selon la langue
-    try:
-        stopwords = set(nltk.corpus.stopwords.words('french' if lang == 'fr' else 'english'))
-    except:
-        stopwords = set()
-    
-    # Calculer la fréquence des mots (hors stopwords)
-    word_freq = {}
-    for sentence in sentences:
-        for word in nltk.word_tokenize(sentence.lower(), language='french' if lang == 'fr' else 'english'):
-            if word not in stopwords and word.isalnum():
-                word_freq[word] = word_freq.get(word, 0) + 1
-    
-    # Normaliser les fréquences
-    max_freq = max(word_freq.values()) if word_freq else 1
-    for word in word_freq:
-        word_freq[word] = word_freq[word] / max_freq
-    
-    # Score sentences based on word frequency
-    sentence_scores = {}
+    # Score sentences by length and position
+    scored_sentences = []
     for i, sentence in enumerate(sentences):
         # Score based on position (beginning sentences are usually more important)
         position_score = 1.0 if i < len(sentences) // 3 else 0.5
         
-        # Score based on word frequency
-        word_score = sum([word_freq.get(word.lower(), 0) 
-                         for word in nltk.word_tokenize(sentence, language='french' if lang == 'fr' else 'english')
-                         if word.isalnum()])
-        
-        # Calculate average word score for the sentence
-        if len(sentence.split()) > 0:
-            word_score = word_score / len(sentence.split())
-        else:
-            word_score = 0
+        # Score based on length (ignore very short sentences)
+        length_score = min(1.0, len(sentence) / 100)
         
         # Combine scores
-        total_score = position_score * 0.3 + word_score * 0.7
-        sentence_scores[sentence] = total_score
+        total_score = position_score * 0.6 + length_score * 0.4
+        
+        scored_sentences.append((sentence, total_score))
     
-    # Select top sentences
+    # Sort by score and select top sentences
+    scored_sentences.sort(key=lambda x: x[1], reverse=True)
     num_sentences = max(1, int(len(sentences) * ratio))
-    top_sentences = sorted(sentence_scores.items(), key=lambda x: x[1], reverse=True)[:num_sentences]
+    summary_sentences = [s[0] for s in scored_sentences[:num_sentences]]
     
     # Reorder sentences based on original position
-    summary_sentences = []
-    for sentence in sentences:
-        if sentence in [s[0] for s in top_sentences]:
-            summary_sentences.append(sentence)
+    original_order = {}
+    for i, sentence in enumerate(sentences):
+        if sentence in [s[0] for s in scored_sentences[:num_sentences]]:
+            original_order[sentence] = i
+    
+    summary_sentences.sort(key=lambda s: original_order.get(s, 0))
     
     # Join sentences
     summary = " ".join(summary_sentences)
     
     return f"**Résumé Extractif ({'Français' if lang == 'fr' else 'Anglais'} détecté):**", summary
 
-# Fonction simplifiée pour le résumé abstractif
-def simplified_abstractive_summarize(text, max_length=150):
+# Fonction pour le résumé abstractif
+def abstractive_summarize(text):
     try:
         lang = detect(text)
     except:
@@ -135,16 +132,36 @@ def simplified_abstractive_summarize(text, max_length=150):
         return "Langue non supportée (FR/EN seulement)", ""
     
     try:
-        # Utiliser un modèle plus léger via pipeline
-        summarizer = load_simple_model()
-        
-        # Limiter la taille d'entrée pour éviter les problèmes de mémoire
-        max_input_length = 1024
-        if len(text) > max_input_length:
-            text = text[:max_input_length]
-        
-        # Générer le résumé
-        summary = summarizer(text, max_length=max_length, min_length=30, do_sample=False)[0]['summary_text']
+        if lang == 'fr':
+            model_fr, tokenizer_fr = load_model_fr()
+            inputs = tokenizer_fr(
+                text,
+                return_tensors="pt",
+                max_length=1024,
+                truncation=True
+            ).to(model_fr.device)
+            outputs = model_fr.generate(
+                inputs.input_ids,
+                max_length=150,
+                num_beams=4,
+                early_stopping=True
+            )
+            summary = tokenizer_fr.decode(outputs[0], skip_special_tokens=True)
+        else:  # 'en'
+            model_en, tokenizer_en = load_model_en()
+            inputs = tokenizer_en(
+                text,
+                return_tensors="pt",
+                max_length=1024,
+                truncation=True
+            ).to(model_en.device)
+            outputs = model_en.generate(
+                inputs.input_ids,
+                max_length=150,
+                num_beams=4,
+                early_stopping=True
+            )
+            summary = tokenizer_en.decode(outputs[0], skip_special_tokens=True)
         
         # Libérer la mémoire
         clear_memory()
@@ -175,7 +192,7 @@ def main():
         with st.expander("Quelle méthode choisir?"):
             st.markdown("""
             - **Résumé Extractif**: Sélectionne les phrases les plus importantes du texte original. Plus rapide, moins de ressources.
-            - **Résumé Abstractif**: Génère un nouveau texte qui capture l'essentiel du contenu. Utilise un modèle optimisé pour mobiles.
+            - **Résumé Abstractif**: Génère un nouveau texte qui capture l'essentiel du contenu. Plus proche d'un résumé humain mais utilise plus de ressources.
             """)
         
         if not text:
@@ -194,7 +211,7 @@ def main():
             
             if abstractive_button:
                 with st.spinner("Génération du résumé abstractif en cours..."):
-                    title, summary = simplified_abstractive_summarize(text)
+                    title, summary = abstractive_summarize(text)
                     if summary:
                         st.success(title)
                         st.markdown(f'<div class="summary-box">{summary}</div>', unsafe_allow_html=True)
@@ -211,17 +228,17 @@ def main():
         
         **Résumé Extractif**:
         - Sélectionne les phrases importantes du texte original
-        - Utilise NLTK et des algorithmes de scoring avancés
+        - Utilise des statistiques pour identifier les phrases clés
         - Rapide et léger en ressources
         
         **Résumé Abstractif**:
-        - Utilise un modèle d'IA optimisé pour les appareils mobiles
-        - Génère un résumé cohérent sans copier le texte mot pour mot
-        - Équilibre entre qualité et performance
+        - Utilise l'IA pour générer un nouveau texte capturant l'essence du contenu
+        - Plus proche d'un résumé humain
+        - Utilise des modèles de langage avancés
         
         L'application détecte automatiquement si votre texte est en français ou en anglais.
         
-        *Développé avec Streamlit, NLTK et Hugging Face Transformers*
+        *Développé avec Streamlit et Hugging Face Transformers*
         """)
 
 if __name__ == "__main__":
