@@ -188,12 +188,22 @@ def main():
         else:
             # Traitement des boutons
             if extractive_button:
-                title, summary = extractive_summarize(text)
-                if summary:
-                    st.success(title)
-                    st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
-                #else:
-                #    st.error("Impossible de générer un résumé extractif")
+                with st.spinner("Génération du résumé extractif en cours..."):
+                    try:
+                        title, summary = extractive_summarize(text)
+                        if summary:
+                            st.success(title)
+                            st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
+                            
+                            # Affichage des statistiques
+                            orig_length = len(text.split())
+                            summ_length = len(summary.split())
+                            reduction = int(100*(1-summ_length/orig_length))
+                            st.caption(f"Réduction : {orig_length} mots → {summ_length} mots (-{reduction}%)")
+                        else:
+                            st.error("Aucun résumé généré (résultat vide)")
+                    except Exception as e:
+                        st.error(f"Erreur lors de la génération : {str(e)}")
             
             if abstractive_button:
                 with st.spinner("Génération du résumé en cours..."):
