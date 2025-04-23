@@ -61,7 +61,7 @@ def load_abstractive_model(lang):
         
         return model, tokenizer
 
-# Fonction pour le résumé extractif - utilise des statistiques simples pour éviter des bibliothèques supplémentaires
+# Fonction pour le résumé extractif 
 def extractive_summarize(text, ratio=0.3):
     # Détection de la langue
     try:
@@ -188,7 +188,7 @@ def main():
     st.title("Résumé Automatique (FR/EN)")
     
     # Préparation des onglets
-    tab1, tab2 = st.tabs(["Résumé de texte", "À propos"])
+    tab1, tab2, tab3 = st.tabs(["Résumé de texte", "Présentation des Modèles", "À propos"])
     
     with tab1:
         text = st.text_area("Texte à résumer", height=250)
@@ -234,6 +234,51 @@ def main():
     
     with tab2:
         st.markdown("""
+            ### **Présentation des Modèles de Résumé Automatique**
+
+            #### **1. Modèle Français : `plguillou/t5-base-fr-sum-cnndm**  
+            **Type** : Modèle **T5 (Text-To-Text Transfer Transformer)** optimisé pour le français.  
+            **Approche** : **Abstractive** (génération de nouveaux textes plutôt que simple extraction).  
+
+            **Avantages** :  
+            ✔ **Spécialisé en français** : Contrairement aux modèles multilingues, il est **finetuné sur des données francophones**, ce qui améliore la qualité des résumés.  
+            ✔ **Résumés fluides** : Grâce à l'architecture **T5**, il produit des paraphrases naturelles, proches d'un résumé humain.  
+            ✔ **Entraîné sur CNN/Daily Mail** : Performant sur les **textes journalistiques** ou narratifs.  
+
+            **Limitations** :  
+            ✖ **Taille conséquente** (~1 Go), nécessitant une **GPU pour une génération rapide**.  
+            ✖ **Moins adapté aux textes techniques** (juridiques, scientifiques) par manque de données d'entraînement spécifiques.  
+
+            ---
+
+            #### **2. Modèle Anglais : `facebook/bart-large-cnn`**  
+            **Type** : Modèle **BART (Bidirectional Auto-Regressive Transformer)**.  
+            **Approche** : **Abstractive**, mais avec une forte capacité d'extraction des idées clés.  
+
+            **Avantages** :  
+            ✔ **Optimisé pour l'anglais** : **SOTA (state-of-the-art)** sur des benchmarks comme CNN/Daily Mail.  
+            ✔ **Architecture bidirectionnelle** : Capture mieux le **contexte global** du texte que les modèles séquentiels.  
+            ✔ **Équilibré entre extraction et génération** : Produit des résumés **concis sans perdre le sens original**.  
+
+            **Limitations** :  
+            ✖ **Très gourmand en ressources** (~1.5 Go), lent sans GPU.  
+            ✖ **Nécessite des prompts adaptés** pour des textes hors domaine journalistique.  
+
+            ---
+
+            ### **Comparaison Rapide**  
+            | Critère               | `plguillou/t5-base-fr-sum-cnndm` (FR) | `facebook/bart-large-cnn` (EN) |  
+            |-----------------------|--------------------------------------|--------------------------------|  
+            | **Langue**            | Français                             | Anglais                        |  
+            | **Approche**          | Abstractive                          | Abstractive + Extractif        |  
+            | **Fluidité**          | ⭐⭐⭐⭐☆                              | ⭐⭐⭐⭐⭐                        |  
+            | **Besoins GPU**       | Recommandé                          | Obligatoire pour vitesse       |  
+            | **Cas d'usage**       | Textes généraux                     | Articles, rapports             |  
+
+            Ces modèles sont **complémentaires** : le premier comble le manque d'outils francophones, tandis que le second reste une référence pour l'anglais.
+                    """)
+    with tab3:
+        st.markdown("""
                 ### Conception et Développement de l'Application
 
                 Les auteurs de cette application ont structuré leur travail en plusieurs étapes claires :
@@ -264,7 +309,7 @@ def main():
                     
 
                 ### Auteurs : Alex, Kebjam, Firhoun
-                        """)
+                """)    
 
 if __name__ == "__main__":
     main()
