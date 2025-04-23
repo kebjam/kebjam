@@ -63,63 +63,66 @@ def load_abstractive_model(lang):
 
 # Fonction pour le résumé extractif 
 def extractive_summarize(text, ratio=0.3):
-    # Détection de langue avec gestion d'erreur
+    # Détection de langue sécurisée
     try:
-        lang = detect(text[:500])  # Analyse les 1000 premiers caractères pour plus de stabilité
+        lang = detect(text[:1000]) if len(text) > 20 else 'fr'
     except:
-        return "Erreur: Impossible de détecter la langue", ""
-    
+        lang = 'fr'  # Fallback
+
     if lang not in ['fr', 'en']:
-        return f"Langue non supportée ({lang}) - FR/EN seulement", ""
+        return "Langue non supportée", ""
 
-    # Découpage avancé des phrases (multilingue)
-    sentence_endings = r'(?<=[.!?…])\s+'  # Regex pour français/anglais
-    sentences = [s.strip() for s in re.split(sentence_endings, text) if s.strip()]
+    # Découpage manuel des phrases
+    sentences = []
+    current = ""
+    end_chars = {'.', '!', '?', '…', '\n'}
     
+    for char in text:
+        current += char
+        if char in end_chars:
+            if len(current.strip()) > 3:  # Ignore les faux positifs
+                sentences.append(current.strip())
+            current = ""
+    
+    if current.strip():
+        sentences.append(current.strip())
+
+    # Vérification du nombre de phrases
     if len(sentences) < 2:
-        return "Texte trop court pour résumer", ""
+        return "Texte trop court", text[:100] + "..." if len(text) > 100 else text
 
-    # Score des phrases avec critères améliorés
-    scored_sentences = []
-    avg_length = sum(len(s.split()) for s in sentences) / len(sentences)
+    # Scoring avec critères multiples
+    avg_len = sum(len(s.split()) for s in sentences) / len(sentences)
+    scored = []
     
-    for i, sentence in enumerate(sentences):
-        # Score de position (courbe gaussienne centrée sur le début)
-        position_score = 1 / (1 + 0.5 * (i / len(sentences))**2)
+    for i, s in enumerate(sentences):
+        # Score de position (importance du début)
+        pos_score = 1 - 0.5 * (i / len(sentences))
         
-        # Score de longueur (normalisé par rapport à la moyenne)
-        length_score = min(1.5, len(sentence.split()) / avg_length)
+        # Score de longueur (normalisé)
+        len_score = min(2, len(s.split()) / avg_len)
         
-        # Score de densité (mots clés)
-        keywords = ['important', 'crucial', 'solution'] if lang == 'en' else ['important', 'solution']
-        keyword_score = 0.5 * sum(sentence.lower().count(kw) for kw in keywords)
+        # Score de mots-clés (langue-specific)
+        keywords_fr = {"important", "solution", "clé"}
+        keywords_en = {"important", "key", "solution"}
+        kw_set = keywords_fr if lang == 'fr' else keywords_en
+        kw_score = 0.2 * sum(s.lower().count(kw) for kw in kw_set)
         
         # Combinaison pondérée
-        total_score = 0.4*position_score + 0.3*length_score + 0.3*keyword_score
-        scored_sentences.append((sentence, total_score, i))
+        total = 0.5*pos_score + 0.3*len_score + 0.2*kw_score
+        scored.append((s, total, i))
 
-    # Sélection et réorganisation
-    scored_sentences.sort(key=lambda x: x[1], reverse=True)
-    top_sentences = sorted(
-        scored_sentences[:max(2, int(len(sentences)*ratio))],
-        key=lambda x: x[2]  # Tri par position originale
-    )
-    
-    # Construction du résumé
-    summary = ' '.join([s[0] for s in top_sentences])
-    
-    # Calcul des métriques
+    # Sélection des meilleures phrases (en gardant l'ordre)
+    scored.sort(key=lambda x: -x[1])
+    selected = sorted(scored[:max(2, int(len(sentences)*ratio))], key=lambda x: x[2])
+    summary = ' '.join([s[0] for s in selected])
+
+    # Métriques
     orig_words = len(text.split())
     summ_words = len(summary.split())
-    reduction_pct = int(100*(1 - summ_words/orig_words)) if orig_words > 0 else 0
-    
-    # Formatage du retour
-    title = (
-        f"**Résumé Extractif ({'Français' if lang == 'fr' else 'Anglais'})**\n"
-        f"Réduction: {orig_words} → {summ_words} mots (-{reduction_pct}%)"
-    )
-    
-    return title, summary
+    reduction = f"{orig_words}→{summ_words} mots (-{int(100*(1-summ_words/orig_words))}%)"
+
+    return f"Résumé Extractif ({lang.upper()}) - {reduction}", summary
 
 # Fonction pour le résumé abstractif
 def abstractive_summarize(text):
@@ -289,9 +292,9 @@ def main():
                     
 
                 ###### Auteurs : 
-                           Alex Trésor MEZANVOU KAMFOUN, 
-                           Kebjam JACKSON et 
-                           Ahmed Firhoun Oumarou SOULEYE
+                ###### Alex Trésor MEZANVOU KAMFOUN, 
+                ###### Kebjam JACKSON et 
+                ###### Ahmed Firhoun Oumarou SOULEYE
                 """)    
 
 if __name__ == "__main__":
