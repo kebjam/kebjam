@@ -2,7 +2,7 @@ import streamlit as st
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from langdetect import detect
 import torch
-#import gradio as gr
+# import gradio as gr  # Commenté car non utilisé
 from transformers import pipeline
 from functools import lru_cache
 
@@ -61,19 +61,14 @@ def load_abstractive_model(lang):
                 torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
             )
             tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large-cnn")
-
-            orig_length = len(text.split())
-            summ_length = len(summary[0]['summary_text'].split())
-            reduction = f"Réduction: {orig_length} mots → {summ_length} mots (-{int(100*(1-summ_length/orig_length))}%)"
         
-        #return model, tokenizer
-        return f"{model, tokenizer}\n\n{reduction}"
+        return model, tokenizer
 
 # Fonction pour le résumé extractif 
 @lru_cache(maxsize=None)
 def load_extractive_model():
     # Modèle spécialisé en extraction de phrases clés
-    return pipeline("text2text-generation", model="ml6team/bert-extractive-summarizer")
+    return pipeline("summarization", model="ml6team/bert-extractive-summarizer")  # Changé en "summarization"
 
 def extractive_summarize(text):
     try:
@@ -82,9 +77,14 @@ def extractive_summarize(text):
             return "Langue non supportée", ""
             
         model = load_extractive_model()
-        summary = model(text, max_length=len(text)//4)[0]['generated_text']
+        summary = model(text, max_length=len(text)//4)[0]['summary_text']
         
-        return f"Résumé Extractif ({'FR' if lang == 'fr' else 'EN'})", summary
+        # Calcul de la réduction
+        orig_length = len(text.split())
+        summ_length = len(summary.split())
+        reduction = f"Réduction: {orig_length} mots → {summ_length} mots (-{int(100*(1-summ_length/orig_length))}%)"
+        
+        return f"Résumé Extractif ({'FR' if lang == 'fr' else 'EN'}) - {reduction}", summary
         
     except Exception as e:
         return f"Erreur: {str(e)}", ""
@@ -137,11 +137,16 @@ def abstractive_summarize(text):
         
         summary = tokenizer.decode(outputs[0], skip_special_tokens=True)
         
+        # Calcul de la réduction
+        orig_length = len(text.split())
+        summ_length = len(summary.split())
+        reduction = f"Réduction: {orig_length} mots → {summ_length} mots (-{int(100*(1-summ_length/orig_length))}%)"
+        
         # Libérer la mémoire GPU
         if torch.cuda.is_available():
             torch.cuda.empty_cache()  
             
-        return f"**Résumé Abstractif ({'Français' if lang == 'fr' else 'Anglais'} détecté):**", summary
+        return f"**Résumé Abstractif ({'Français' if lang == 'fr' else 'Anglais'} détecté) - {reduction}**", summary
         
     except Exception as e:
         return f"Erreur: {str(e)}", ""
