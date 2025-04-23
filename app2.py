@@ -5,6 +5,8 @@ import torch
 # import gradio as gr  # Commenté car non utilisé
 from transformers import pipeline
 from functools import lru_cache
+import nltk
+
 
 # Configuration pour mobiles et optimisation mémoire
 st.set_page_config(
@@ -65,36 +67,57 @@ def load_abstractive_model(lang):
         return model, tokenizer
 
 # Fonction pour le résumé extractif 
-@lru_cache(maxsize=None)
-def load_extractive_model():
-  
-    return pipeline(
-        "summarization", 
-        model="linydub/bart-large-samsum-extractive",  # Modèle spécialisé extractif
-        device="cuda" if torch.cuda.is_available() else "cpu"
-    )
+nltk.download('punkt')
+nltk.download('stopwords')
 
-def extractive_summarize(text):
+@lru_cache(maxsize=None)
+def load_nltk_resources():
+    """Charge les ressources linguistiques pour NLTK"""
+    return {
+        'fr': nltk.data.load('tokenizers/punkt/french.pickle'),
+        'en': nltk.data.load('tokenizers/punkt/english.pickle')
+    }
+
+def extractive_summarize(text, ratio=0.3):
     try:
-        # Détection langue
+        # Détection de langue
         lang = detect(text[:500])
         if lang not in ['fr', 'en']:
             return "Langue non supportée", ""
+        
+        # Tokenization des phrases
+        sentences = sent_tokenize(text, language='french' if lang == 'fr' else 'english')
+        
+        if len(sentences) < 2:
+            return "Texte trop court", text[:100] + "..." if len(text) > 100 else text
+        
+        # Calcul des fréquences de mots (sans stopwords)
+        stopwords = set(nltk.corpus.stopwords.words('french' if lang == 'fr' else 'english'))
+        word_freq = {}
+        for word in nltk.word_tokenize(text.lower()):
+            if word.isalpha() and word not in stopwords:
+                word_freq[word] = word_freq.get(word, 0) + 1
+        
+        # Scoring des phrases
+        sentence_scores = {}
+        for i, sentence in enumerate(sentences):
+            # Score basé sur les mots importants
+            score = sum(word_freq.get(word.lower(), 0) for word in nltk.word_tokenize(sentence) if word.isalpha())
             
-        # Génération du résumé
-        model = load_extractive_model()
-        result = model(
-            text,
-            max_length=len(text)//2,
-            min_length=len(text)//4,
-            do_sample=False,
-            truncation=True
-        )
+            # Bonus pour les premières phrases
+            position_weight = 1.0 - (0.5 * i / len(sentences))
+            sentence_scores[sentence] = score * position_weight
         
-        summary = result[0]['summary_text']
-        reduction = f"Réduction: {len(text.split())} → {len(summary.split())} mots"
+        # Sélection des meilleures phrases
+        top_sentences = sorted(sentence_scores.items(), key=lambda x: -x[1])[:int(len(sentences)*ratio)]
+        summary = ' '.join([s[0] for s in sorted(top_sentences, key=lambda x: sentences.index(x[0]))])
         
-        return f"Résumé Extractif ({'FR' if lang == 'fr' else 'EN'}) - {reduction}", summary
+        # Calcul des métriques
+        orig_words = len(text.split())
+        summ_words = len(summary.split())
+        reduction = f"{orig_words}→{summ_words} mots (-{int(100*(1-summ_words/orig_words))}%)"
+        
+        return f"Résumé NLTK ({'FR' if lang == 'fr' else 'EN'}) - {reduction}", summary
         
     except Exception as e:
         return f"Erreur: {str(e)}", ""
@@ -231,8 +254,6 @@ def main():
     
     with tab2:
         st.markdown("""
-            ### **Présentation des Modèles de Résumé Automatique**
-
             #### **1. Modèle Français : `plguillou/t5-base-fr-sum-cnndm**  
             **Type** : Modèle **T5 (Text-To-Text Transfer Transformer)** optimisé pour le français.  
             **Approche** : **Abstractive** (génération de nouveaux textes plutôt que simple extraction).  
@@ -260,20 +281,7 @@ def main():
             **Limitations** :  
             ✖ **Très gourmand en ressources** (~1.5 Go), lent sans GPU.  
             ✖ **Nécessite des prompts adaptés** pour des textes hors domaine journalistique.  
-
-            ---
-
-            ### **Comparaison Rapide**  
-            | Critère               | `plguillou/t5-base-fr-sum-cnndm` (FR) | `facebook/bart-large-cnn` (EN) |  
-            |-----------------------|--------------------------------------|--------------------------------|  
-            | **Langue**            | Français                             | Anglais                        |  
-            | **Approche**          | Abstractive                          | Abstractive + Extractif        |  
-            | **Fluidité**          | ⭐⭐⭐⭐☆                              | ⭐⭐⭐⭐⭐                        |  
-            | **Besoins GPU**       | Recommandé                          | Obligatoire pour vitesse       |  
-            | **Cas d'usage**       | Textes généraux                     | Articles, rapports             |  
-
-            Ces modèles sont **complémentaires** : le premier comble le manque d'outils francophones, tandis que le second reste une référence pour l'anglais.
-                    """)
+            """)
     with tab3:
         st.markdown("""
                 ### Conception et Développement de l'Application
@@ -305,7 +313,10 @@ def main():
                 - **Couverture** : Bien que spécialisée pour le français et l'anglais, l'application peut identifier d'autres langues pour afficher un message d'erreur approprié guidant l'utilisateur.
                     
 
-                ### Auteurs : Alex, Kebjam, Firhoun
+                ###### Auteurs : 
+                ###### Alex Trésor MEZANVOU KAMFOUN, 
+                ###### Kebjam JACKSON et 
+                ###### Ahmed Firhoun Oumarou SOULEYE
                 """)    
 
 if __name__ == "__main__":
