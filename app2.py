@@ -66,6 +66,142 @@ def load_abstractive_model(lang):
 
 # Fonction pour le résumé extractif 
 @lru_cache(maxsize=None)
+def load_french_model():
+    """Charge le modèle CamemBERT pour le français"""
+    tokenizer = CamembertTokenizer.from_pretrained("camembert-base")
+    model = CamembertModel.from_pretrained("camembert-base")
+    return tokenizer, model
+
+def french_extractive_summarize(text, ratio=0.3):
+    try:
+        # Chargement modèle
+        tokenizer, model = load_french_model()
+        
+        # Découpage des phrases avec règles françaises
+        sentences = []
+        current = ""
+        for char in text:
+            current += char
+            if char in ['.', '!', '?', '…', '\n']:
+                if len(current.strip()) > 3:  # Ignore les phrases trop courtes
+                    sentences.append(current.strip())
+                current = ""
+        if current.strip():
+            sentences.append(current.strip())
+
+        if len(sentences) < 2:
+            return "Texte trop court", text[:200] + "..."
+
+        # Encodage global
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        with torch.no_grad():
+            outputs = model(**inputs)
+        doc_embedding = outputs.last_hidden_state.mean(dim=1)
+
+        # Scoring des phrases
+        scored_sentences = []
+        for i, sent in enumerate(sentences):
+            sent_inputs = tokenizer(sent, return_tensors="pt", truncation=True)
+            with torch.no_grad():
+                sent_embedding = model(**sent_inputs).last_hidden_state.mean(dim=1)
+            score = torch.cosine_similarity(doc_embedding, sent_embedding).item()
+            scored_sentences.append((sent, score, i))
+        
+        # Sélection et réorganisation
+        top_sentences = sorted(scored_sentences, key=lambda x: -x[1])[:int(len(sentences)*ratio)]
+        summary = ' '.join([s[0] for s in sorted(top_sentences, key=lambda x: x[2])])
+        
+        # Statistiques
+        orig_words = len(text.split())
+        summ_words = len(summary.split())
+        reduction = f"{orig_words}→{summ_words} mots (-{int(100*(1-summ_words/orig_words))}%)"
+        
+        return f"Résumé Extractif (FR) - {reduction}", summary
+
+    except Exception as e:
+        return f"Erreur: {str(e)}", ""
+    
+
+@lru_cache(maxsize=None)
+def load_english_model():
+    """Charge le modèle BERT pour l'anglais"""
+    tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
+    model = BertModel.from_pretrained('bert-base-multilingual-cased')
+    return tokenizer, model
+
+def english_extractive_summarize(text, ratio=0.3):
+    try:
+        # Chargement modèle
+        tokenizer, model = load_english_model()
+        
+        # Découpage des phrases (règles anglaises)
+        sentences = []
+        current = ""
+        for char in text:
+            current += char
+            if char in ['.', '!', '?', '\n']:
+                if len(current.strip()) > 4:  # Seuil différent pour l'anglais
+                    sentences.append(current.strip())
+                current = ""
+        if current.strip():
+            sentences.append(current.strip())
+
+        if len(sentences) < 2:
+            return "Text too short", text[:200] + "..."
+
+        # Encodage global
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        with torch.no_grad():
+            outputs = model(**inputs)
+        doc_embedding = outputs.last_hidden_state.mean(dim=1)
+
+        # Scoring avec pondération positionnelle
+        scored_sentences = []
+        for i, sent in enumerate(sentences):
+            sent_inputs = tokenizer(sent, return_tensors="pt", truncation=True)
+            with torch.no_grad():
+                sent_embedding = model(**sent_inputs).last_hidden_state.mean(dim=1)
+            
+            # Score combiné (similarité + position)
+            similarity = torch.cosine_similarity(doc_embedding, sent_embedding).item()
+            position_score = 1 / (1 + i)  # Poids décroissant
+            score = 0.7 * similarity + 0.3 * position_score
+            scored_sentences.append((sent, score, i))
+        
+        # Sélection
+        top_sentences = sorted(scored_sentences, key=lambda x: -x[1])[:int(len(sentences)*ratio)]
+        summary = ' '.join([s[0] for s in sorted(top_sentences, key=lambda x: x[2])])
+        
+        # Stats
+        orig_words = len(text.split())
+        summ_words = len(summary.split())
+        reduction = f"{orig_words}→{summ_words} words (-{int(100*(1-summ_words/orig_words))}%)"
+        
+        return f"Extractive Summary (EN) - {reduction}", summary
+
+    except Exception as e:
+        return f"Error: {str(e)}", ""
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"""
+@lru_cache(maxsize=None)
 def load_camembert_model():
     #""""Charge le modèle extractif""""
     tokenizer = CamembertTokenizer.from_pretrained("camembert-base")
@@ -126,6 +262,8 @@ def extractive_summarize(text, ratio=0.3):
         
     except Exception as e:
         return f"Erreur: {str(e)}", ""
+
+"""
 
 # Fonction pour le resume abstractif
 def abstractive_summarize(text):
@@ -213,33 +351,23 @@ def main():
             - **Résumé Abstractif**: Génère un nouveau texte qui capture l'essentiel du contenu. Plus proche d'un résumé humain mais utilise plus de ressources.
             """)
         
-        if not text.strip():
+        if not text:
             st.info("Veuillez entrer un texte à résumer")
         elif len(text) < 50:
             st.warning("Veuillez entrer un texte plus long (minimum 50 caractères)")
         else:
             # Traitement des boutons
             if extractive_button:
-                with st.spinner("Analyse du texte en cours..."):
-                    title, summary = extractive_summarize(text)  # La détection de langue est gérée automatiquement dans la fonction
-                    
-                    if summary and summary.strip():
-                        st.success(title)
-                        st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
-                        
-                        # Calcul des statistiques
-                        orig_words = len(text.split())
-                        summ_words = len(summary.split())
-                        if orig_words > 0:
-                            reduction = int(100 * (1 - summ_words/orig_words))
-                            st.caption(f"Réduction : {orig_words} → {summ_words} mots (-{reduction}%)")
-                    else:
-                        st.warning(
-                            "Le résumé généré est vide. Essayez avec :\n"
-                            "- Un texte plus long\n"
-                            "- Des phrases complètes (avec ponctuation)\n"
-                            "- Un contenu moins technique"
-                        )
+                # Pour un texte français
+                title, summary = french_extractive_summarize(text)
+
+                # Pour un texte anglais
+                title, summary = english_extractive_summarize(text)
+                if summary:
+                    st.success(title)
+                    st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
+                else:
+                    st.error("Impossible de générer un résumé extractif")
             
             if abstractive_button:
                 with st.spinner("Génération du résumé en cours..."):
