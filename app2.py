@@ -1,5 +1,5 @@
 import streamlit as st
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, CamembertTokenizer, CamembertModel AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, CamembertTokenizer, CamembertModel, AutoTokenizer, AutoModel
 from langdetect import detect
 import torch
 # import gradio as gr  # Commenté car non utilisé
