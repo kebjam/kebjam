@@ -191,7 +191,7 @@ def _english_summary(text, ratio):
         # Métriques
         orig = len(text.split())
         summ = len(summary.split())
-        metrics = f"Original: {orig} words , Summary: {summ}, words (-{int(100*(1 - orig/summ))}%)"
+        metrics = f"Original: {orig} words , Summary: {summ}, words (-{int(100*(1 - summ/orig))}%)"
       
         
         return f"Extractive Summary (EN)\n{metrics}", summary
