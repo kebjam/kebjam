@@ -119,7 +119,7 @@ def extractive_summarize(text, ratio=0.3):
         
         # Sélection et réorganisation
         sentence_scores.sort(key=lambda x: -x[1])
-        selected = sorted(sentence_scores[:max(2, int(len(sentences)*ratio)], key=lambda x: x[2])
+        selected = sorted(sentence_scores[:max(2, int(len(sentences)*ratio))], key=lambda x: x[2])
         summary = ' '.join([s[0] for s in selected])
         
         # Métriques
