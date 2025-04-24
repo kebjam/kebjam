@@ -67,81 +67,67 @@ def load_abstractive_model(lang):
 # Fonction pour le résumé extractif 
 
 @lru_cache(maxsize=None)
-def load_extractive_model():
-    """Charge un modèle multilingue pour traitement FR/EN"""
-    model_name = "bert-base-multilingual-cased"  # Modèle supportant FR + EN
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name)
+def load_extractive_model(lang):
+    """Charge le modèle extractif adapté à la langue"""
+    if lang == 'fr':
+        tokenizer = CamembertTokenizer.from_pretrained("camembert-base")
+        model = CamembertModel.from_pretrained("camembert-base")
+    else:  # anglais et autres langues
+        tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-cased")
+        model = BertModel.from_pretrained("bert-base-multilingual-cased")
     return tokenizer, model
 
-def extractive_summarize(text, ratio=0.3, lang='auto'):
+def extractive_summarize(text, ratio=0.3):
     try:
-        # Détection automatique de la langue si non spécifiée
-        if lang == 'auto':
-            from langdetect import detect
-            lang = detect(text[:500])  # Analyse les 500 premiers caractères
+        # Détection de langue
+        lang = detect(text[:500]) if len(text) > 20 else 'fr'
+        lang = 'en' if lang not in ['fr', 'en'] else lang  # fallback
         
-        # Chargement du modèle
-        tokenizer, model = load_extractive_model()
+        # Chargement du modèle adapté
+        tokenizer, model = load_extractive_model(lang)
         
-        # Découpage en phrases adapté aux deux langues
-        sentences = []
-        current = ""
-        sentence_endings = {'.', '!', '?', '…', '\n'}
-        
-        for char in text:
-            current += char
-            if char in sentence_endings:
-                if len(current.strip()) > 3:  # Ignore les phrases trop courtes
-                    sentences.append(current.strip())
-                current = ""
-        
-        if current.strip():
-            sentences.append(current.strip())
-
-        if len(sentences) < 2:
-            return "Texte trop court", text[:200] + ("..." if len(text) > 200 else "")
-        
-        # Encodage du texte complet
+        # Tokenization et encodage
         inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
         with torch.no_grad():
             outputs = model(**inputs)
-        doc_embedding = outputs.last_hidden_state.mean(dim=1)  # Embedding moyen du document
+        embeddings = outputs.last_hidden_state[0]
         
-        # Calcul des scores des phrases
+        # Découpage en phrases adapté
+        sentence_endings = ['.', '!', '?', '…', '\n']
+        sentences = []
+        current = ""
+        for char in text:
+            current += char
+            if char in sentence_endings:
+                if len(current.strip()) > 3:
+                    sentences.append(current.strip())
+                current = ""
+        if current.strip():
+            sentences.append(current.strip())
+        
+        if len(sentences) < 2:
+            return "Texte trop court", text[:200] + "..."
+        
+        # Scoring des phrases
         sentence_scores = []
-        for i, sentence in enumerate(sentences):
-            # Encodage de la phrase
-            inputs = tokenizer(sentence, return_tensors="pt", truncation=True)
+        for i, sent in enumerate(sentences):
+            sent_inputs = tokenizer(sent, return_tensors="pt", truncation=True)
             with torch.no_grad():
-                outputs = model(**inputs)
-            sent_embedding = outputs.last_hidden_state.mean(dim=1)
-            
-            # Score = similarité cosinus + pondération par position
-            similarity = torch.cosine_similarity(doc_embedding, sent_embedding).item()
-            position_score = 1.0 - (i / len(sentences))  # Les premières phrases comptent plus
-            total_score = (0.7 * similarity) + (0.3 * position_score)
-            
-            sentence_scores.append((sentence, total_score, i))
+                sent_embedding = model(**sent_inputs).last_hidden_state.mean(dim=1)
+            score = torch.cosine_similarity(embeddings.mean(dim=0), sent_embedding)
+            sentence_scores.append((sent, score.item(), i))
         
-        # Sélection et réorganisation des phrases
-        sentence_scores.sort(key=lambda x: -x[1])  # Tri par score décroissant
-        selected = sorted(
-            sentence_scores[:max(2, int(len(sentences) * ratio))],
-            key=lambda x: x[2]  # Tri par position originale
-        )
+        # Sélection et réorganisation
+        sentence_scores.sort(key=lambda x: -x[1])
+        selected = sorted(sentence_scores[:max(2, int(len(sentences)*ratio)], key=lambda x: x[2])
         summary = ' '.join([s[0] for s in selected])
         
         # Métriques
-        orig_words = len(text.split())
-        summ_words = len(summary.split())
-        reduction = int(100 * (1 - summ_words / orig_words)) if orig_words > 0 else 0
+        orig_len = len(text.split())
+        summ_len = len(summary.split())
+        reduction = int(100*(1 - summ_len/orig_len)) if orig_len > 0 else 0
         
-        # Formatage du résultat
-        lang_label = "FR" if lang == 'fr' else "EN"
-        title = f"Résumé Extractif ({lang_label}) - {orig_words}→{summ_words} mots (-{reduction}%)"
-        
-        return title, summary
+        return f"Résumé Extractive ({'FR' if lang == 'fr' else 'EN'}) - {orig_len}→{summ_len} mots (-{reduction}%)", summary
         
     except Exception as e:
         return f"Erreur: {str(e)}", ""
