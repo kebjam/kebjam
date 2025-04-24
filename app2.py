@@ -1,5 +1,5 @@
 import streamlit as st
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, CamembertTokenizer, CamembertModel, AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, CamembertTokenizer, CamembertModel, RobertaTokenizer, RobertaModel
 from langdetect import detect
 import torch
 # import gradio as gr  # Commenté car non utilisé
@@ -66,81 +66,87 @@ def load_abstractive_model(lang):
 
 # Fonction pour le résumé extractif 
 @lru_cache(maxsize=None)
-def load_french_model():
-    """Charge le modèle CamemBERT pour le français"""
+def load_camembert_model():
+    #""""Charge le modèle extractif""""
     tokenizer = CamembertTokenizer.from_pretrained("camembert-base")
     model = CamembertModel.from_pretrained("camembert-base")
     return tokenizer, model
 
-def french_extractive_summarize(text, ratio=0.3):
+def extractive_summarize(text, ratio=0.3):
     try:
-        # Chargement modèle
-        tokenizer, model = load_french_model()
+        # Chargement du modèle
+        tokenizer, model = load_camembert_model()
         
-        # Découpage des phrases avec règles françaises
+        # Tokenization et encodage
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        with torch.no_grad():
+            outputs = model(**inputs)
+        
+        # Récupération des embeddings
+        embeddings = outputs.last_hidden_state[0]
+        
+        # Découpage en phrases (version française)
         sentences = []
         current = ""
         for char in text:
             current += char
             if char in ['.', '!', '?', '…', '\n']:
-                if len(current.strip()) > 3:  # Ignore les phrases trop courtes
+                if len(current.strip()) > 3:
                     sentences.append(current.strip())
                 current = ""
         if current.strip():
             sentences.append(current.strip())
-
+        
         if len(sentences) < 2:
             return "Texte trop court", text[:200] + "..."
-
-        # Encodage global
-        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-        with torch.no_grad():
-            outputs = model(**inputs)
-        doc_embedding = outputs.last_hidden_state.mean(dim=1)
-
-        # Scoring des phrases
-        scored_sentences = []
+        
+        # Calcul des scores avec CamemBERT
+        sentence_scores = []
         for i, sent in enumerate(sentences):
+            # Embedding moyen de la phrase
             sent_inputs = tokenizer(sent, return_tensors="pt", truncation=True)
             with torch.no_grad():
                 sent_embedding = model(**sent_inputs).last_hidden_state.mean(dim=1)
-            score = torch.cosine_similarity(doc_embedding, sent_embedding).item()
-            scored_sentences.append((sent, score, i))
+            
+            # Similarité avec l'embedding global
+            score = torch.cosine_similarity(embeddings.mean(dim=0), sent_embedding)
+            sentence_scores.append((sent, score.item(), i))
         
-        # Sélection et réorganisation
-        top_sentences = sorted(scored_sentences, key=lambda x: -x[1])[:int(len(sentences)*ratio)]
-        summary = ' '.join([s[0] for s in sorted(top_sentences, key=lambda x: x[2])])
+        # Sélection des phrases
+        sentence_scores.sort(key=lambda x: -x[1])
+        selected = sorted(sentence_scores[:int(len(sentences)*ratio)], key=lambda x: x[2])
+        summary = ' '.join([s[0] for s in selected])
         
-        # Statistiques
-        orig_words = len(text.split())
-        summ_words = len(summary.split())
-        reduction = f"{orig_words}→{summ_words} mots (-{int(100*(1-summ_words/orig_words))}%)"
+        # Métriques
+        orig_len = len(text.split())
+        summ_len = len(summary.split())
+        reduction = int(100*(1 - summ_len/orig_len)) if orig_len > 0 else 0
         
-        return f"Résumé Extractif (FR) - {reduction}", summary
-
+        return f"Résumé Extractive (FR) - {orig_len}→{summ_len} mots (-{reduction}%)", summary
+        
     except Exception as e:
         return f"Erreur: {str(e)}", ""
     
 
 @lru_cache(maxsize=None)
-def load_english_model():
-    """Charge le modèle BERT pour l'anglais"""
-    tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
-    model = BertModel.from_pretrained('bert-base-multilingual-cased')
+def load_roberta_model():
+    """Charge le modèle RoBERTa pour l'anglais"""
+    tokenizer = RobertaTokenizer.from_pretrained('roberta-base')
+    model = RobertaModel.from_pretrained('roberta-base')
     return tokenizer, model
 
-def english_extractive_summarize(text, ratio=0.3):
+def roberta_extractive_summarize(text, ratio=0.3):
     try:
         # Chargement modèle
-        tokenizer, model = load_english_model()
+        tokenizer, model = load_roberta_model()
         
-        # Découpage des phrases (règles anglaises)
+        # Découpage des phrases adapté à RoBERTa
         sentences = []
         current = ""
         for char in text:
             current += char
             if char in ['.', '!', '?', '\n']:
-                if len(current.strip()) > 4:  # Seuil différent pour l'anglais
+                if len(current.strip().split()) > 3:  # Au moins 4 mots
                     sentences.append(current.strip())
                 current = ""
         if current.strip():
@@ -149,39 +155,57 @@ def english_extractive_summarize(text, ratio=0.3):
         if len(sentences) < 2:
             return "Text too short", text[:200] + "..."
 
-        # Encodage global
-        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        # Encodage global (avec gestion spéciale RoBERTa)
+        inputs = tokenizer(text, 
+                         return_tensors="pt", 
+                         truncation=True, 
+                         max_length=512,
+                         add_special_tokens=True)
         with torch.no_grad():
             outputs = model(**inputs)
         doc_embedding = outputs.last_hidden_state.mean(dim=1)
 
-        # Scoring avec pondération positionnelle
+        # Scoring amélioré pour RoBERTa
         scored_sentences = []
         for i, sent in enumerate(sentences):
-            sent_inputs = tokenizer(sent, return_tensors="pt", truncation=True)
-            with torch.no_grad():
-                sent_embedding = model(**sent_inputs).last_hidden_state.mean(dim=1)
+            sent_inputs = tokenizer(sent, 
+                                  return_tensors="pt", 
+                                  truncation=True,
+                                  add_special_tokens=False)  # Important pour RoBERTa
             
-            # Score combiné (similarité + position)
+            with torch.no_grad():
+                outputs = model(**sent_inputs)
+                sent_embedding = outputs.last_hidden_state.mean(dim=1)
+            
+            # Score combiné (RoBERTa nécessite plus de pondération sémantique)
             similarity = torch.cosine_similarity(doc_embedding, sent_embedding).item()
-            position_score = 1 / (1 + i)  # Poids décroissant
-            score = 0.7 * similarity + 0.3 * position_score
+            position_weight = 0.9 ** i  # Décroissance exponentielle
+            length_weight = min(1.0, len(sent.split())/15)  # Normalisation
+            
+            score = (0.6 * similarity + 
+                    0.2 * position_weight + 
+                    0.2 * length_weight)
+            
             scored_sentences.append((sent, score, i))
         
-        # Sélection
-        top_sentences = sorted(scored_sentences, key=lambda x: -x[1])[:int(len(sentences)*ratio)]
+        # Sélection dynamique
+        num_sentences = max(2, int(len(sentences)*ratio))  # Au moins 2 phrases
+        top_sentences = sorted(scored_sentences, key=lambda x: -x[1])[:num_sentences]
         summary = ' '.join([s[0] for s in sorted(top_sentences, key=lambda x: x[2])])
         
-        # Stats
+        # Statistiques avancées
         orig_words = len(text.split())
         summ_words = len(summary.split())
-        reduction = f"{orig_words}→{summ_words} words (-{int(100*(1-summ_words/orig_words))}%)"
+        compression_ratio = orig_words / summ_words if summ_words > 0 else 0
         
-        return f"Extractive Summary (EN) - {reduction}", summary
+        metrics = (f"Original: {orig_words} words | "
+                  f"Summary: {summ_words} words | "
+                  f"Ratio: {compression_ratio:.1f}x")
+        
+        return f"RoBERTa Extractive Summary\n{metrics}", summary
 
     except Exception as e:
-        return f"Error: {str(e)}", ""
-
+        return f"RoBERTa Error: {str(e)}", ""
 
 
 
@@ -359,10 +383,10 @@ def main():
             # Traitement des boutons
             if extractive_button:
                 # Pour un texte français
-                title, summary = french_extractive_summarize(text)
+                title, summary = extractive_summarize(text)
 
                 # Pour un texte anglais
-                title, summary = english_extractive_summarize(text)
+                title, summary = roberta_extractive_summarize(text)
                 if summary:
                     st.success(title)
                     st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
