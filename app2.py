@@ -1,5 +1,5 @@
 import streamlit as st
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, CamembertTokenizer, CamembertModel
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, CamembertTokenizer, CamembertModel AutoTokenizer, AutoModel
 from langdetect import detect
 import torch
 # import gradio as gr  # Commenté car non utilisé
@@ -65,9 +65,99 @@ def load_abstractive_model(lang):
         return model, tokenizer
 
 # Fonction pour le résumé extractif 
+
+@lru_cache(maxsize=None)
+def load_extractive_model():
+    """Charge un modèle multilingue pour traitement FR/EN"""
+    model_name = "bert-base-multilingual-cased"  # Modèle supportant FR + EN
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name)
+    return tokenizer, model
+
+def extractive_summarize(text, ratio=0.3, lang='auto'):
+    try:
+        # Détection automatique de la langue si non spécifiée
+        if lang == 'auto':
+            from langdetect import detect
+            lang = detect(text[:500])  # Analyse les 500 premiers caractères
+        
+        # Chargement du modèle
+        tokenizer, model = load_extractive_model()
+        
+        # Découpage en phrases adapté aux deux langues
+        sentences = []
+        current = ""
+        sentence_endings = {'.', '!', '?', '…', '\n'}
+        
+        for char in text:
+            current += char
+            if char in sentence_endings:
+                if len(current.strip()) > 3:  # Ignore les phrases trop courtes
+                    sentences.append(current.strip())
+                current = ""
+        
+        if current.strip():
+            sentences.append(current.strip())
+
+        if len(sentences) < 2:
+            return "Texte trop court", text[:200] + ("..." if len(text) > 200 else "")
+        
+        # Encodage du texte complet
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        with torch.no_grad():
+            outputs = model(**inputs)
+        doc_embedding = outputs.last_hidden_state.mean(dim=1)  # Embedding moyen du document
+        
+        # Calcul des scores des phrases
+        sentence_scores = []
+        for i, sentence in enumerate(sentences):
+            # Encodage de la phrase
+            inputs = tokenizer(sentence, return_tensors="pt", truncation=True)
+            with torch.no_grad():
+                outputs = model(**inputs)
+            sent_embedding = outputs.last_hidden_state.mean(dim=1)
+            
+            # Score = similarité cosinus + pondération par position
+            similarity = torch.cosine_similarity(doc_embedding, sent_embedding).item()
+            position_score = 1.0 - (i / len(sentences))  # Les premières phrases comptent plus
+            total_score = (0.7 * similarity) + (0.3 * position_score)
+            
+            sentence_scores.append((sentence, total_score, i))
+        
+        # Sélection et réorganisation des phrases
+        sentence_scores.sort(key=lambda x: -x[1])  # Tri par score décroissant
+        selected = sorted(
+            sentence_scores[:max(2, int(len(sentences) * ratio))],
+            key=lambda x: x[2]  # Tri par position originale
+        )
+        summary = ' '.join([s[0] for s in selected])
+        
+        # Métriques
+        orig_words = len(text.split())
+        summ_words = len(summary.split())
+        reduction = int(100 * (1 - summ_words / orig_words)) if orig_words > 0 else 0
+        
+        # Formatage du résultat
+        lang_label = "FR" if lang == 'fr' else "EN"
+        title = f"Résumé Extractif ({lang_label}) - {orig_words}→{summ_words} mots (-{reduction}%)"
+        
+        return title, summary
+        
+    except Exception as e:
+        return f"Erreur: {str(e)}", ""
+
+
+
+
+
+
+
+
+
+"""
 @lru_cache(maxsize=None)
 def load_camembert_model():
-    """Charge le modèle CamemBERT pré-entraîné"""
+    #""""Charge le modèle extractif""""
     tokenizer = CamembertTokenizer.from_pretrained("camembert-base")
     model = CamembertModel.from_pretrained("camembert-base")
     return tokenizer, model
@@ -122,19 +212,21 @@ def extractive_summarize(text, ratio=0.3):
         summ_len = len(summary.split())
         reduction = int(100*(1 - summ_len/orig_len)) if orig_len > 0 else 0
         
-        return f"Résumé CamemBERT (FR) - {orig_len}→{summ_len} mots (-{reduction}%)", summary
+        return f"Résumé Extractive (FR) - {orig_len}→{summ_len} mots (-{reduction}%)", summary
         
     except Exception as e:
         return f"Erreur: {str(e)}", ""
-# Fonction pour le résumé abstractif
+"""
+
+# Fonction pour le resume abstractif
 def abstractive_summarize(text):
     try:
         lang = detect(text)
     except:
-        return "Erreur de détection de langue", ""
+        return "Erreur de detection de langue", ""
     
     if lang not in ['fr', 'en']:
-        return "Langue non supportée (FR/EN seulement)", ""
+        return "Langue non supportee (FR/EN seulement)", ""
     
     try:
         model, tokenizer = load_abstractive_model(lang)
@@ -239,33 +331,67 @@ def main():
     
     with tab2:
         st.markdown("""
-            #### **1. Modèle Français : `plguillou/t5-base-fr-sum-cnndm**  
-            **Type** : Modèle **T5 (Text-To-Text Transfer Transformer)** optimisé pour le français.  
-            **Approche** : **Abstractive** (génération de nouveaux textes plutôt que simple extraction).  
+            ### **Modèle Extractif avec CamemBERT**  
+            **Fonctionnement** :  
+            Cette approche utilise CamemBERT, un modèle de langue français et anglais pré-entraînés, pour générer des embeddings (représentations vectorielles) des phrases. Elle sélectionne ensuite les phrases les plus importantes en calculant leur similarité avec l'embedding moyen du texte, sans générer de nouveau contenu.  
 
             **Avantages** :  
-            ✔ **Spécialisé en français** : Contrairement aux modèles multilingues, il est **finetuné sur des données francophones**, ce qui améliore la qualité des résumés.  
-            ✔ **Résumés fluides** : Grâce à l'architecture **T5**, il produit des paraphrases naturelles, proches d'un résumé humain.  
-            ✔ **Entraîné sur CNN/Daily Mail** : Performant sur les **textes journalistiques** ou narratifs.  
+            - **Préservation exacte** du texte original, crucial pour les documents juridiques ou techniques.  
+            - **Performant en français** grâce à l'optimisation de CamemBERT pour cette langue.  
+            - **Moins gourmand en ressources** que les modèles abstractifs (pas de génération de texte).  
 
-            **Limitations** :  
-            ✖ **Taille conséquente** (~1 Go), nécessitant une **GPU pour une génération rapide**.  
-            ✖ **Moins adapté aux textes techniques** (juridiques, scientifiques) par manque de données d'entraînement spécifiques.  
+            **Inconvénients** :  
+            - **Non spécialisé** : CamemBERT n'est pas conçu spécifiquement pour le résumé.  
+            - **Qualité variable** : dépend fortement de la structure du texte original.  
+            - **Limité aux langues supportées** (français optimal, anglais moins performant).  
 
             ---
 
-            #### **2. Modèle Anglais : `facebook/bart-large-cnn`**  
-            **Type** : Modèle **BART (Bidirectional Auto-Regressive Transformer)**.  
-            **Approche** : **Abstractive**, mais avec une forte capacité d'extraction des idées clés.  
+            ### **Modèle Abstractif Français : `plguillou/t5-base-fr-sum-cnndm`**  
+            **Fonctionnement** :  
+            Ce modèle T5 (Text-To-Text Transfer Transformer) est spécialement fine-tuné pour le résumé abstractif en français. Il reformule le contenu pour produire un résumé fluide et naturel, comme le ferait un humain.  
 
             **Avantages** :  
-            ✔ **Optimisé pour l'anglais** : **SOTA (state-of-the-art)** sur des benchmarks comme CNN/Daily Mail.  
-            ✔ **Architecture bidirectionnelle** : Capture mieux le **contexte global** du texte que les modèles séquentiels.  
-            ✔ **Équilibré entre extraction et génération** : Produit des résumés **concis sans perdre le sens original**.  
+            - **Résultats très naturels** grâce à son entraînement sur des données journalistiques (CNN/Daily Mail).  
+            - **Spécialisé français** : meilleure qualité que les modèles multilingues.  
+            - **Capacité à synthétiser** des idées complexes.  
 
-            **Limitations** :  
-            ✖ **Très gourmand en ressources** (~1.5 Go), lent sans GPU.  
-            ✖ **Nécessite des prompts adaptés** pour des textes hors domaine journalistique.  
+            **Inconvénients** :  
+            - **Risque de paraphrase inexacte** (hallucinations).  
+            - **Taille importante** (~1 Go), nécessitant une GPU pour des performances optimales.  
+            - **Moins adapté** aux textes techniques ou spécialisés.  
+
+            ---
+
+            ### **Modèle Abstractif Anglais : `facebook/bart-large-cnn`**  
+            **Fonctionnement** :  
+            BART (Bidirectional and Auto-Regressive Transformer) est un modèle state-of-the-art optimisé pour le résumé abstractif en anglais. Il combine compréhension contextuelle et génération de texte.  
+
+            **Avantages** :  
+            - **Excellente qualité** sur les textes journalistiques et narratifs.  
+            - **Architecture bidirectionnelle** qui capture mieux le contexte que les modèles séquentiels.  
+            - **Bon équilibre** entre extraction d'idées et reformulation.  
+
+            **Inconvénients** :  
+            - **Très gourmand en ressources** (1.5 Go de RAM minimum).  
+            - **Nécessite des prompts adaptés** pour les textes hors domaine journalistique.  
+            - **Spécialisé anglais** : performances médiocres en français.  
+
+            ---
+
+            ### **Comparaison Clé**  
+            | Critère               | Extractif (CamemBERT) | Abstractif (T5/BART) |  
+            |-----------------------|----------------------|----------------------|  
+            | **Préservation texte** | ✅ Exacte            | ❌ Reformulé         |  
+            | **Fluidité**          | ❌ Original          | ✅ Naturelle         |  
+            | **Besoins GPU**       | Faibles              | Élevés               |  
+            | **Cas d'usage**       | Textes techniques    | Résultats grand public |  
+
+            **Recommandation** :  
+            - Pour **l'extraction fidèle** (rapports, articles scientifiques) : approche CamemBERT.  
+            - Pour **des résumés fluides** (articles, contenus web) : modèles T5/BART selon la langue.  
+
+            Ces modèles couvrent l'essentiel des besoins en traitement automatique de texte multilingue, chacun avec ses forces spécifiques.
             """)
     with tab3:
         st.markdown("""
