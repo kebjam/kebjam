@@ -65,82 +65,6 @@ def load_abstractive_model(lang):
         return model, tokenizer
 
 # Fonction pour le résumé extractif 
-
-@lru_cache(maxsize=None)
-def load_extractive_model(lang):
-    """Charge le modèle extractif adapté à la langue"""
-    if lang == 'fr':
-        tokenizer = CamembertTokenizer.from_pretrained("camembert-base")
-        model = CamembertModel.from_pretrained("camembert-base")
-    else:  # anglais et autres langues
-        tokenizer = BertTokenizer.from_pretrained("bert-base-multilingual-cased")
-        model = BertModel.from_pretrained("bert-base-multilingual-cased")
-    return tokenizer, model
-
-def extractive_summarize(text, ratio=0.3):
-    try:
-        # Détection de langue
-        lang = detect(text[:500]) if len(text) > 20 else 'fr'
-        lang = 'en' if lang not in ['fr', 'en'] else lang  # fallback
-        
-        # Chargement du modèle adapté
-        tokenizer, model = load_extractive_model(lang)
-        
-        # Tokenization et encodage
-        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-        with torch.no_grad():
-            outputs = model(**inputs)
-        embeddings = outputs.last_hidden_state[0]
-        
-        # Découpage en phrases adapté
-        sentence_endings = ['.', '!', '?', '…', '\n']
-        sentences = []
-        current = ""
-        for char in text:
-            current += char
-            if char in sentence_endings:
-                if len(current.strip()) > 3:
-                    sentences.append(current.strip())
-                current = ""
-        if current.strip():
-            sentences.append(current.strip())
-        
-        if len(sentences) < 2:
-            return "Texte trop court", text[:200] + "..."
-        
-        # Scoring des phrases
-        sentence_scores = []
-        for i, sent in enumerate(sentences):
-            sent_inputs = tokenizer(sent, return_tensors="pt", truncation=True)
-            with torch.no_grad():
-                sent_embedding = model(**sent_inputs).last_hidden_state.mean(dim=1)
-            score = torch.cosine_similarity(embeddings.mean(dim=0), sent_embedding)
-            sentence_scores.append((sent, score.item(), i))
-        
-        # Sélection et réorganisation
-        sentence_scores.sort(key=lambda x: -x[1])
-        selected = sorted(sentence_scores[:max(2, int(len(sentences)*ratio))], key=lambda x: x[2])
-        summary = ' '.join([s[0] for s in selected])
-        
-        # Métriques
-        orig_len = len(text.split())
-        summ_len = len(summary.split())
-        reduction = int(100*(1 - summ_len/orig_len)) if orig_len > 0 else 0
-        
-        return f"Résumé Extractive ({'FR' if lang == 'fr' else 'EN'}) - {orig_len}→{summ_len} mots (-{reduction}%)", summary
-        
-    except Exception as e:
-        return f"Erreur: {str(e)}", ""
-
-
-
-
-
-
-
-
-
-"""
 @lru_cache(maxsize=None)
 def load_camembert_model():
     #""""Charge le modèle extractif""""
@@ -202,7 +126,6 @@ def extractive_summarize(text, ratio=0.3):
         
     except Exception as e:
         return f"Erreur: {str(e)}", ""
-"""
 
 # Fonction pour le resume abstractif
 def abstractive_summarize(text):
