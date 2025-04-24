@@ -290,33 +290,33 @@ def main():
             - **Résumé Abstractif**: Génère un nouveau texte qui capture l'essentiel du contenu. Plus proche d'un résumé humain mais utilise plus de ressources.
             """)
         
-if not text.strip():
-    st.info("Veuillez entrer un texte à résumer")
-elif len(text) < 50:
-    st.warning("Veuillez entrer un texte plus long (minimum 50 caractères)")
-else:
-    # Traitement des boutons
-    if extractive_button:
-        with st.spinner("Analyse du texte en cours..."):
-            title, summary = extractive_summarize(text)  # La détection de langue est gérée automatiquement dans la fonction
-            
-            if summary and summary.strip():
-                st.success(title)
-                st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
+    if not text.strip():
+        st.info("Veuillez entrer un texte à résumer")
+    elif len(text) < 50:
+        st.warning("Veuillez entrer un texte plus long (minimum 50 caractères)")
+    else:
+        # Traitement des boutons
+        if extractive_button:
+            with st.spinner("Analyse du texte en cours..."):
+                title, summary = extractive_summarize(text)  # La détection de langue est gérée automatiquement dans la fonction
                 
-                # Calcul des statistiques
-                orig_words = len(text.split())
-                summ_words = len(summary.split())
-                if orig_words > 0:
-                    reduction = int(100 * (1 - summ_words/orig_words))
-                    st.caption(f"Réduction : {orig_words} → {summ_words} mots (-{reduction}%)")
-            else:
-                st.warning(
-                    "Le résumé généré est vide. Essayez avec :\n"
-                    "- Un texte plus long\n"
-                    "- Des phrases complètes (avec ponctuation)\n"
-                    "- Un contenu moins technique"
-                )
+                if summary and summary.strip():
+                    st.success(title)
+                    st.markdown(f"<div class='summary-box'>{summary}</div>", unsafe_allow_html=True)
+                    
+                    # Calcul des statistiques
+                    orig_words = len(text.split())
+                    summ_words = len(summary.split())
+                    if orig_words > 0:
+                        reduction = int(100 * (1 - summ_words/orig_words))
+                        st.caption(f"Réduction : {orig_words} → {summ_words} mots (-{reduction}%)")
+                else:
+                    st.warning(
+                        "Le résumé généré est vide. Essayez avec :\n"
+                        "- Un texte plus long\n"
+                        "- Des phrases complètes (avec ponctuation)\n"
+                        "- Un contenu moins technique"
+                    )
             
             if abstractive_button:
                 with st.spinner("Génération du résumé en cours..."):
