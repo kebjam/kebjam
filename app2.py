@@ -191,7 +191,7 @@ def _english_summary(text, ratio):
         # Métriques
         orig = len(text.split())
         summ = len(summary.split())
-        metrics = f"Original: {orig} words , Summary: {summ}, words : - {orig/summ:.1f}%"
+        metrics = f"Original: {orig} words , Summary: {summ}, words (-{int(100*(1 - orig/summ))}%)"
       
         
         return f"Extractive Summary (EN)\n{metrics}", summary
@@ -335,8 +335,8 @@ def main():
             Ce modèle T5 (Text-To-Text Transfer Transformer) est fine-tuné pour le résumé abstractif de textes français. Il reformule le contenu en générant des phrases nouvelles qui condensent l’information.  
 
             #### **2. `facebook/bart-large-cnn` (Anglais)**  
-            **Fonctionnement** :  
-            BART (Bidirectional and Auto-Regressive Transformer) est un modèle hybride optimisé pour le résumé abstractif en anglais. Il combine une compréhension bidirectionnelle du contexte avec une génération auto-régressive. 
+            **Fonctionnement** : BART (Bidirectional and Auto-Regressive Transformer) est un modèle hybride optimisé pour le résumé abstractif en anglais. Il combine une compréhension bidirectionnelle du contexte avec une génération auto-régressive. 
+            
             ---
 
             **Recommandation** :  
