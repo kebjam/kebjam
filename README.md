@@ -31,5 +31,6 @@ Ecole nationale de la Statistique et de l'Analyse économique (ENSAE - Pierre ND
 *Élèves Analystes statisticiens en 3ème année*
 
 ## Sous la supervision de :
-Mme Mously DIAW 
+Mme Mously DIAW
+
 *Senior ML Engineer*
