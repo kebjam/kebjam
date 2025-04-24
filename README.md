@@ -27,6 +27,7 @@ Ecole nationale de la Statistique et de l'Analyse économique (ENSAE - Pierre ND
 * Ahmed Firhoun OUMAROU SOULEYE
 * Alex Trésor MEZANVOU KAMDOUN
 * Kebjam JACKSON
+
 *Élèves Analystes statisticiens en 3ème année*
 
 ## Sous la supervision de :
