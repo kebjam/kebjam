@@ -80,7 +80,7 @@ def load_roberta_model():
     model = RobertaModel.from_pretrained('roberta-base')
     return tokenizer, model
 
-# ==================== DÉTECTION LANGUE ====================
+# ==================== DéTECTION LANGUE ====================
 def detect_language(text):
     """Détecte la langue avec gestion des erreurs"""
     try:
@@ -191,7 +191,8 @@ def _english_summary(text, ratio):
         # Métriques
         orig = len(text.split())
         summ = len(summary.split())
-        metrics = f"Original: {orig} words | Summary: {summ} words | Ratio: {orig/summ:.1f}x"
+        metrics = f"Original: {orig} words , Summary: {summ}, words : - {orig/summ:.1f}%"
+      
         
         return f"Extractive Summary (EN)\n{metrics}", summary
 
@@ -199,86 +200,6 @@ def _english_summary(text, ratio):
         return f"EN Error: {str(e)}", ""
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-"""
-@lru_cache(maxsize=None)
-def load_camembert_model():
-    #""""Charge le modèle extractif""""
-    tokenizer = CamembertTokenizer.from_pretrained("camembert-base")
-    model = CamembertModel.from_pretrained("camembert-base")
-    return tokenizer, model
-
-def extractive_summarize(text, ratio=0.3):
-    try:
-        # Chargement du modèle
-        tokenizer, model = load_camembert_model()
-        
-        # Tokenization et encodage
-        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
-        with torch.no_grad():
-            outputs = model(**inputs)
-        
-        # Récupération des embeddings
-        embeddings = outputs.last_hidden_state[0]
-        
-        # Découpage en phrases (version française)
-        sentences = []
-        current = ""
-        for char in text:
-            current += char
-            if char in ['.', '!', '?', '…', '\n']:
-                if len(current.strip()) > 3:
-                    sentences.append(current.strip())
-                current = ""
-        if current.strip():
-            sentences.append(current.strip())
-        
-        if len(sentences) < 2:
-            return "Texte trop court", text[:200] + "..."
-        
-        # Calcul des scores avec CamemBERT
-        sentence_scores = []
-        for i, sent in enumerate(sentences):
-            # Embedding moyen de la phrase
-            sent_inputs = tokenizer(sent, return_tensors="pt", truncation=True)
-            with torch.no_grad():
-                sent_embedding = model(**sent_inputs).last_hidden_state.mean(dim=1)
-            
-            # Similarité avec l'embedding global
-            score = torch.cosine_similarity(embeddings.mean(dim=0), sent_embedding)
-            sentence_scores.append((sent, score.item(), i))
-        
-        # Sélection des phrases
-        sentence_scores.sort(key=lambda x: -x[1])
-        selected = sorted(sentence_scores[:int(len(sentences)*ratio)], key=lambda x: x[2])
-        summary = ' '.join([s[0] for s in selected])
-        
-        # Métriques
-        orig_len = len(text.split())
-        summ_len = len(summary.split())
-        reduction = int(100*(1 - summ_len/orig_len)) if orig_len > 0 else 0
-        
-        return f"Résumé Extractive (FR) - {orig_len}→{summ_len} mots (-{reduction}%)", summary
-        
-    except Exception as e:
-        return f"Erreur: {str(e)}", ""
-
-"""
 
 # Fonction pour le resume abstractif
 def abstractive_summarize(text):
@@ -397,101 +318,51 @@ def main():
     
     with tab2:
         st.markdown("""
-            ### **Modèle Extractif avec CamemBERT**  
+            ### **Modèles Extractifs**
+
+            #### **1. CamemBERT-base (Français)**
             **Fonctionnement** :  
-            Cette approche utilise CamemBERT, un modèle de langue français et anglais pré-entraînés, pour générer des embeddings (représentations vectorielles) des phrases. Elle sélectionne ensuite les phrases les plus importantes en calculant leur similarité avec l'embedding moyen du texte, sans générer de nouveau contenu.  
+            CamemBERT est une version française du modèle BERT, pré-entraîné sur un large corpus francophone. Pour le résumé extractif, il analyse les embeddings des phrases et sélectionne celles qui sont les plus représentatives du document en calculant leur similarité avec l'embedding moyen du texte.  
 
-            **Avantages** :  
-            - **Préservation exacte** du texte original, crucial pour les documents juridiques ou techniques.  
-            - **Performant en français** grâce à l'optimisation de CamemBERT pour cette langue.  
-            - **Moins gourmand en ressources** que les modèles abstractifs (pas de génération de texte).  
-
-            **Inconvénients** :  
-            - **Non spécialisé** : CamemBERT n'est pas conçu spécifiquement pour le résumé.  
-            - **Qualité variable** : dépend fortement de la structure du texte original.  
-            - **Limité aux langues supportées** (français optimal, anglais moins performant).  
-
-            ---
-
-            ### **Modèle Abstractif Français : `plguillou/t5-base-fr-sum-cnndm`**  
+            #### **2. RoBERTa-base (Anglais)**  
             **Fonctionnement** :  
-            Ce modèle T5 (Text-To-Text Transfer Transformer) est spécialement fine-tuné pour le résumé abstractif en français. Il reformule le contenu pour produire un résumé fluide et naturel, comme le ferait un humain.  
+            RoBERTa est une version améliorée de BERT, optimisée pour l'anglais. Comme CamemBERT, il est utilisé ici pour extraire les phrases clés via des embeddings, mais avec des pondérations adaptées aux structures anglaises (ex: prise en compte des phrases longues et de leur position).  
 
-            **Avantages** :  
-            - **Résultats très naturels** grâce à son entraînement sur des données journalistiques (CNN/Daily Mail).  
-            - **Spécialisé français** : meilleure qualité que les modèles multilingues.  
-            - **Capacité à synthétiser** des idées complexes.  
+            ### **Modèles Abstractifs**  
 
-            **Inconvénients** :  
-            - **Risque de paraphrase inexacte** (hallucinations).  
-            - **Taille importante** (~1 Go), nécessitant une GPU pour des performances optimales.  
-            - **Moins adapté** aux textes techniques ou spécialisés.  
-
-            ---
-
-            ### **Modèle Abstractif Anglais : `facebook/bart-large-cnn`**  
+            #### **1. `plguillou/t5-base-fr-sum-cnndm` (Français)**  
             **Fonctionnement** :  
-            BART (Bidirectional and Auto-Regressive Transformer) est un modèle state-of-the-art optimisé pour le résumé abstractif en anglais. Il combine compréhension contextuelle et génération de texte.  
+            Ce modèle T5 (Text-To-Text Transfer Transformer) est fine-tuné pour le résumé abstractif de textes français. Il reformule le contenu en générant des phrases nouvelles qui condensent l’information.  
 
-            **Avantages** :  
-            - **Excellente qualité** sur les textes journalistiques et narratifs.  
-            - **Architecture bidirectionnelle** qui capture mieux le contexte que les modèles séquentiels.  
-            - **Bon équilibre** entre extraction d'idées et reformulation.  
-
-            **Inconvénients** :  
-            - **Très gourmand en ressources** (1.5 Go de RAM minimum).  
-            - **Nécessite des prompts adaptés** pour les textes hors domaine journalistique.  
-            - **Spécialisé anglais** : performances médiocres en français.  
-
+            #### **2. `facebook/bart-large-cnn` (Anglais)**  
+            **Fonctionnement** :  
+            BART (Bidirectional and Auto-Regressive Transformer) est un modèle hybride optimisé pour le résumé abstractif en anglais. Il combine une compréhension bidirectionnelle du contexte avec une génération auto-régressive. 
             ---
-
-            ### **Comparaison Clé**  
-            | Critère               | Extractif (CamemBERT) | Abstractif (T5/BART) |  
-            |-----------------------|----------------------|----------------------|  
-            | **Préservation texte** | ✅ Exacte            | ❌ Reformulé         |  
-            | **Fluidité**          | ❌ Original          | ✅ Naturelle         |  
-            | **Besoins GPU**       | Faibles              | Élevés               |  
-            | **Cas d'usage**       | Textes techniques    | Résultats grand public |  
 
             **Recommandation** :  
-            - Pour **l'extraction fidèle** (rapports, articles scientifiques) : approche CamemBERT.  
-            - Pour **des résumés fluides** (articles, contenus web) : modèles T5/BART selon la langue.  
+            - **Extractif** : Pour une analyse précise sans déformation (médical, juridique).  
+            - **Abstractif** : Pour des résumés grand public ou des textes longs nécessitant synthèse.  
 
-            Ces modèles couvrent l'essentiel des besoins en traitement automatique de texte multilingue, chacun avec ses forces spécifiques.
+                                    
             """)
     with tab3:
         st.markdown("""
                 ### Conception et Développement de l'Application
 
                 Les auteurs de cette application ont structuré leur travail en plusieurs étapes claires :
-                - **Pré-traitement et extraction des features** : Cette phase cruciale a consisté à nettoyer les textes d'entrée et à extraire les caractéristiques linguistiques pertinentes. Les développeurs ont implémenté des techniques de segmentation de phrases, de normalisation du texte et d'analyse statistique pour préparer les données avant le traitement.
                 - **Résumé automatique** : Le cœur du système comprend deux approches distinctes. La solution extractive utilise des algorithmes statistiques pour sélectionner les phrases clés, tandis que la méthode abstractive s'appuie sur des modèles de langage avancés (BARTHEZ pour le français et DistilBART pour l'anglais) pour générer des résumés fluides.
                 - **Déploiement sur API** : L'équipe a finalisé le projet en mettant en place une interface Streamlit conviviale, permettant un accès simple et rapide aux fonctionnalités depuis n'importe quel navigateur web.
 
-                ### Approche Extractive : Mécanisme et Caractéristiques
-
-                Le **résumé extractif** repose sur une méthodologie statistique éprouvée :
-                - **Fonctionnement** : Le système identifie et extrait les phrases les plus représentatives du texte source en analysant leur position dans le document et leur longueur. Les phrases situées en début de texte et de taille moyenne reçoivent un score plus élevé.
-                - **Avantages** : Cette méthode offre une rapidité d'exécution remarquable et nécessite peu de ressources système. Elle préserve intégralement la formulation originale, garantissant une exactitude terminologique.
-                - **Limitations** : Le résumé produit peut manquer de fluidité entre les phrases sélectionnées et ne capture pas toujours les idées implicites nécessitant une reformulation.
-
-                ### Approche Abstractive : Technologie et Performances
-
-                La solution de **résumé abstractif** met en œuvre des technologies avancées de NLP :
-                - **Principe** : Contrairement à l'approche extractive, cette méthode génère du texte complètement nouveau en s'appuyant sur des transformers (BARTHEZ et DistilBART) spécialement entraînés pour la synthèse de contenu.
-                - **Points forts** : Capable de produire des résumés plus naturels et concis, cette approche excelle dans la reformulation des idées et la compression d'information tout en maintenant la cohérence du discours.
-                - **Contraintes** : Elle nécessite davantage de ressources computationnelles et peut occasionnellement introduire des hallucinations ou des approximations, particulièrement sur des textes très techniques.
 
                 ### Détection Automatique de Langue
 
                 L'application intègre un système intelligent de reconnaissance linguistique :
-                - **Mécanisme** : Par l'analyse des 500 premiers caractères du texte, le module langdetect détermine automatiquement si le contenu est en français ou en anglais avec une précision supérieure à 95%.
-                - **Fonctionnalité** : Cette détection permet d'orienter automatiquement le traitement vers le modèle linguistique approprié, offrant ainsi une expérience utilisateur transparente sans nécessiter de sélection manuelle.
-                - **Couverture** : Bien que spécialisée pour le français et l'anglais, l'application peut identifier d'autres langues pour afficher un message d'erreur approprié guidant l'utilisateur.
+                - **Mécanisme** : Par l'analyse des 500 premiers caractères du texte, le module langdetect détermine automatiquement si le contenu est en français ou en anglais.
+                - **Fonctionnalité** : Cette détection permet d'orienter automatiquement le traitement vers le modèle linguistique approprié.
                     
 
-                ###### Auteurs : 
-                ###### Alex Trésor MEZANVOU KAMFOUN, 
+                #### Auteurs : 
+                ###### Alex Trésor MEZANVOU KAMDOUN, 
                 ###### Kebjam JACKSON et 
                 ###### Ahmed Firhoun Oumarou SOULEYE
                 """)    
